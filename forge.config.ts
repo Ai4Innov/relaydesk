@@ -25,6 +25,8 @@ class WindowsZIP extends MakerZIP {
 }
 
 const config: ForgeConfig = {
+  // Lets a second build run while a packaged copy from out/ is open (Windows locks running binaries).
+  ...(process.env.RELAY_OUT_DIR ? { outDir: process.env.RELAY_OUT_DIR } : {}),
   packagerConfig: {
     asar: false,
     executableName: "RelayDesk",

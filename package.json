@@ -36,6 +36,7 @@
     "test:ci": "node scripts/test-batches.cjs",
     "test:e2e": "playwright test",
     "doctor": "node scripts/doctor.cjs",
+    "screenshots": "node scripts/capture-screenshots.mjs",
     "build": "vite build --config vite.renderer.config.ts"
   },
   "dependencies": {

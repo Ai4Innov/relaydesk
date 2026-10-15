@@ -14,7 +14,11 @@ Relay Desk handles private professional communications, so a few product rules a
 
 ## Development setup
 
-Requirements: Windows x64, official [Node.js 24](https://nodejs.org/) (`^24.13.0`; the MSYS/MinGW Node build is not supported), and Git.
+Requirements: Windows x64, macOS or Linux x64; official [Node.js 24](https://nodejs.org/) (`^24.13.0`; the MSYS/MinGW Node build is not supported on Windows); and Git. Linux also needs a Secret Service keyring (GNOME Keyring or KWallet). See [Getting started](docs/getting-started.md) for per-OS prerequisites.
+
+CI runs typecheck, tests and packaging on Windows, macOS and Ubuntu. Keep code portable: use `host.path` and `insidePath` from `src/main/platform.ts` for filesystem paths instead of hard-coding `win32` or `/` separators, and add a case to `tests/platform.test.ts` when behaviour differs by OS.
+
+If you change the UI, refresh the docs screenshots with `npm run package && npm run screenshots`.
 
 ```powershell
 npm install

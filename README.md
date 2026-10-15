@@ -1,6 +1,20 @@
+<div align="center">
+
 # Relay Desk
 
-A local-first Windows communications workspace built with Electron, React and TypeScript. It imports selected Gmail, Microsoft and Slack sources, keeps a searchable encrypted archive, and prepares responses using your signed-in GitHub Copilot subscription.
+**Your inbox, Slack and calendar in one calm place, with GitHub Copilot doing the heavy lifting.**
+
+Local-first · Encrypted · No AI API key · Windows, macOS and Linux
+
+[![CI](https://github.com/Ai4Innov/relaydesk/actions/workflows/ci.yml/badge.svg)](https://github.com/Ai4Innov/relaydesk/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-informational)
+
+<img src="docs/images/tour.gif" alt="A tour of Relay Desk: getting-started checklist, Today, unified inbox, tasks, calendar and settings" width="860">
+
+</div>
+
+Relay Desk is a desktop communications assistant built with Electron, React and TypeScript. It imports selected Gmail, Microsoft and Slack sources, keeps a searchable encrypted archive on your computer, and prepares responses using your signed-in GitHub Copilot subscription. It never sends anything on your behalf.
 
 > Relay Desk is an [Ai4Innov](https://github.com/Ai4Innov) open-source project, licensed under [Apache-2.0](LICENSE). It is an independent project and is **not affiliated with, endorsed by or sponsored by GitHub, Microsoft, Google, Slack or Meta**. You are responsible for complying with your employer's policies and each provider's terms, including the [GitHub Copilot terms](https://docs.github.com/en/site-policy/github-terms/github-terms-for-additional-products-and-features#github-copilot).
 
@@ -9,22 +23,51 @@ A local-first Windows communications workspace built with Electron, React and Ty
 - **No AI-provider API key.** Generation uses the official [`@github/copilot-sdk`](https://github.com/github/copilot-sdk) with your signed-in Copilot subscription. Pick any entitled model per message.
 - **One inbox for many channels.** Gmail (Apps Script relay, Gmail API, browser companion or Playwright fallback), Microsoft 365, Slack, WhatsApp Web and Google/Microsoft calendars.
 - **Chat agent with reviewed actions.** It finds what needs attention, cites evidence, drafts replies, creates tasks and reports, and writes DOCX/XLSX/PPTX files. Every write is an action card you confirm, and Relay Desk never sends email.
-- **Local-first and encrypted.** The archive uses SQLCipher, encrypted attachments and a Windows DPAPI-protected key, with local keyword and optional semantic (RAG) search.
+- **Local-first and encrypted.** The archive uses SQLCipher, encrypted attachments and an OS-protected key (DPAPI, Keychain or Secret Service), with local keyword and optional semantic (RAG) search.
 - **Explicit consent.** Every account has separate controls for data access, source selection and AI sharing.
 
 ## Quick start
 
-Requires Windows x64 and official [Node.js 24](https://nodejs.org/) (`^24.13.0`).
+**New here? Follow the illustrated [Getting started guide](docs/getting-started.md).** It walks through Windows, macOS and Linux step by step.
 
-```powershell
+You need [Node.js 24](https://nodejs.org/) (`^24.13.0`), Git and the [GitHub Copilot CLI](https://github.com/github/copilot-cli) with a Copilot subscription.
+
+```bash
+npm install -g @github/copilot
+copilot            # type /login once, then exit
 git clone https://github.com/Ai4Innov/relaydesk.git
 cd relaydesk
 npm install
-npm run doctor     # checks native prerequisites
-npm start          # launches the desktop app in development mode
+npm run doctor     # checks native prerequisites for your OS
+npm start          # launches the desktop app
 ```
 
-Then open **Settings → Connections** to add a mailbox and **Settings → Copilot & assistant** to sign in to Copilot and choose a model. See [Windows setup](#windows-setup) and [First use](#first-use) for details.
+The chat screen opens with a **Getting started** checklist. Each step ticks itself off as you complete it: connect Copilot, choose a model, connect an inbox, choose what AI may read, then ask your first question. To look around first, load the **sample workspace**. It is fully synthetic and touches no account.
+
+| Platform | Status | Archive key protected by | `npm run make` output |
+| --- | --- | --- | --- |
+| Windows 10/11 x64 | Primary development platform | DPAPI | ZIP |
+| macOS 13+ (arm64/x64) | Supported; built and tested in CI | Keychain | ZIP (unsigned `.app`) |
+| Linux x64 | Supported; built and tested in CI | Secret Service (GNOME Keyring/KWallet) | `.deb`, ZIP |
+
+## See it
+
+| | |
+| --- | --- |
+| ![Getting-started checklist](docs/images/01-welcome.png) **Guided setup** in the chat | ![Today](docs/images/02-today.png) **Today:** your next moves, ranked, with reasons |
+| ![Unified inbox](docs/images/03-inbox.png) **Unified inbox** across accounts | ![Tasks](docs/images/04-tasks.png) **Tasks and focus reports** from your messages |
+| ![Calendar](docs/images/05-calendar.png) **Calendar** with overlap detection | ![Settings](docs/images/06-settings.png) **Pick any Copilot model** and control AI access |
+
+## How it works
+
+```mermaid
+flowchart LR
+    P["Gmail · Outlook · Slack<br/>WhatsApp · Calendars"] -->|"connectors /<br/>browser companion"| A[("Encrypted local archive")]
+    A --> S["Local search<br/>keyword + optional RAG"]
+    S -->|"excerpts from AI-enabled<br/>sources only"| C["GitHub Copilot<br/>your subscription, any model"]
+    C -->|"answers, drafts,<br/>action cards"| U["Relay Desk UI"]
+    U -->|"you confirm"| W["Save draft · create event<br/>never sends"]
+```
 
 ## Repository layout
 
@@ -199,11 +242,19 @@ Choose **Schedule** on a task, review its calendar, time zone, start/end and rem
 
 Read [privacy and permissions](docs/privacy-and-permissions.md) before connecting workplace accounts. The [provider registration guide](docs/provider-setup.md) covers Gmail API setup; the [browser setup guide](docs/browser-mode.md) covers the companion and browser-only channels.
 
-## Windows setup
+## Platform setup
 
-Use **official Windows x64 Node.js 24** satisfying `^24.13.0`, plus npm. The MSYS Node installation tested during development crashes when loading the SDK's native Koffi binding; matching the Node version number alone is not sufficient. Use a terminal in this project:
+Step-by-step, illustrated instructions for each OS are in [Getting started](docs/getting-started.md). In short:
 
-```powershell
+- **Windows x64:** use **official Windows x64 Node.js 24** (`^24.13.0`). The MSYS Node installation tested during development crashes when loading the SDK's native Koffi binding, so a matching version number alone is not sufficient.
+- **macOS:** Node.js 24 and the Xcode command-line tools (`xcode-select --install`). The archive key lives in the Keychain.
+- **Linux:** Node.js 24, `build-essential`/`python3` (for native-module fallbacks) and a running Secret Service keyring such as GNOME Keyring or KWallet. Without a keyring, Relay Desk refuses to start rather than storing the key in plaintext. The tray icon needs AppIndicator support on GNOME.
+
+The assistant's optional shell tool uses PowerShell on Windows and bash on macOS/Linux. **Sign in to Copilot** opens Windows Terminal/cmd, macOS Terminal or the first available Linux terminal emulator (`x-terminal-emulator`, GNOME Terminal, Konsole, Xfce Terminal, kitty, Alacritty or xterm).
+
+Then, in a terminal in this project:
+
+```bash
 npm install
 npm run doctor
 npm run typecheck
@@ -213,7 +264,7 @@ npm start
 
 `npm run doctor` checks local native dependencies, not account authentication. The official Node runtime and SQLCipher native binding have been exercised in development. Packaged coverage includes startup, encrypted-vault sample/search, signed-in Copilot model discovery, and synthetic multi-account browser capture/persistence. The real unpacked extension has also exercised the HTTP bridge in an isolated fixture browser. These checks do not establish live Gmail/Calendar DOM compatibility, generated responses or optional OCR/media models.
 
-The application pins Electron **42.11.6** with `better-sqlite3-multiple-ciphers` **12.11.1**. This maintained Electron release has the required Windows ABI-146 cipher prebuild. Electron 44 uses ABI 149, for which this cipher release has no prebuild; the development machine has no MSVC toolchain. Do not independently upgrade Electron and assume native compatibility.
+The application pins Electron **42.11.6** with `better-sqlite3-multiple-ciphers` **12.11.1**. This maintained Electron release has the required ABI-146 cipher prebuilds. Electron 44 uses ABI 149, for which this cipher release has no prebuild; the development machine has no MSVC toolchain. Do not independently upgrade Electron and assume native compatibility.
 
 Electron and Node use different native-module ABIs. Forge may rebuild the database module for Electron; subsequent Node-based storage tests can then report an ABI mismatch. Close the app and run `npm rebuild better-sqlite3-multiple-ciphers` with official Node before Node tests. Do not rebuild while another instance is using the shared installation.
 
@@ -228,11 +279,14 @@ Electron and Node use different native-module ABIs. Forge may rebuild the databa
 | `npm run typecheck` | Check TypeScript without emitting files. |
 | `npm run build` | Build the renderer only; not a complete desktop package. |
 | `npm run package` | Create an unpackaged desktop distribution under `out`. |
-| `npm run make` | Create the configured Windows ZIP artifact under `out\make`. |
+| `npm run make` | Create installable artifacts under `out/make`: ZIP on Windows and macOS, `.deb` and ZIP on Linux. |
 | `npm run test:e2e` | Run the configured Playwright desktop smoke tests. |
 | `npm run doctor` | Check local native runtime prerequisites. |
+| `npm run screenshots` | Regenerate `docs/images` from the synthetic sample workspace (run `npm run package` first). |
 
 Packaging is not an installer-signing, update, notarization or provider-verification service. No signed installer or automatic updater is configured.
+
+On macOS and Linux, `npm run make` writes a ZIP under `out/make/zip/<platform>/<arch>`; Linux also gets a `.deb` under `out/make/deb/x64` that depends on `libsecret-1-0`. macOS builds are unsigned and not notarized. Remove the quarantine flag with `xattr -dr com.apple.quarantine "Relay Desk.app"`, or right-click the app and choose Open. When running an unpacked Linux build, you may need `sudo chown root:root chrome-sandbox && sudo chmod 4755 chrome-sandbox` in its folder.
 
 Windows ZIP creation uses the built-in `%SystemRoot%\System32\tar.exe` (libarchive), avoiding the legacy PowerShell ZIP tool's long-path limit. The portable build is `out\Relay Desk-win32-x64\RelayDesk.exe`; keep its neighboring files together. The ZIP is written under `out\make\zip\win32\x64`.
 
@@ -246,11 +300,11 @@ Windows ZIP creation uses the built-in `%SystemRoot%\System32\tar.exe` (libarchi
 6. Enable AI for the relevant account only after reviewing the disclosure notice. Background AI is a separate opt-in; the default local daily budget is 20 attempted runs. Failed requests can consume this local budget, and it does not replace GitHub's own allowance or billing rules.
 7. Review generated text, recipients and citations. Use **Save & open in Gmail** for an API-authorized mailbox, including verified same-email browser replies. Other browser and Slack replies can be copied into the original site. Sending always happens in the original provider.
 
-**CLI signed in but app says sign in:** use the current `out\Relay Desk-win32-x64\RelayDesk.exe` build. The original adapter used SDK `mode: "empty"`, which disables the Windows credential store even with `useLoggedInUser: true`. The adapter now uses `mode: "copilot-cli"` for credential discovery while explicitly retaining session isolation. It does not read/copy stored credentials or fall back to a token/API-key provider. Quit an older app through its tray menu before launching the updated executable and clicking Connect. Older side-by-side builds share the same application-data directory but do not include the browser-first update.
+**CLI signed in but app says sign in:** use a current build. The original adapter used SDK `mode: "empty"`, which disables the OS credential store even with `useLoggedInUser: true`. The adapter now uses `mode: "copilot-cli"` for credential discovery while explicitly retaining session isolation. It does not read/copy stored credentials or fall back to a token/API-key provider. Quit an older app through its tray menu before launching the updated executable and clicking Connect. Older side-by-side builds share the same application-data directory but do not include the browser-first update.
 
 ## Archive, attachments and calendars
 
-The archive uses SQLCipher, encrypted attachment blobs and a Windows-protected archive key. Default application data is Electron's `userData` directory, normally `%APPDATA%\relay-desk`; `RELAY_DATA_DIR` can explicitly override it. Preserve `archive-key.dpapi` with the installation's protected user profile. Backups require the **same archive key** and are not portable password-protected exports. They cannot recover the archive after that key/profile is lost.
+The archive uses SQLCipher, encrypted attachment blobs and an archive key protected by the operating system: DPAPI on Windows (`archive-key.dpapi`), Keychain on macOS and Secret Service on Linux (`archive-key.safestorage`). On Linux, Relay Desk refuses to run if only Electron's plaintext `basic_text` backend is available. Default application data is Electron's `userData` directory: `%APPDATA%\Relay Desk`, `~/Library/Application Support/Relay Desk` or `~/.config/Relay Desk`. `RELAY_DATA_DIR` can explicitly override it. Preserve the key file with the protected user profile. Backups require the **same archive key** and are not portable password-protected exports. They cannot recover the archive after that key/profile is lost.
 
 Keyword retrieval is local. Optional semantic retrieval uses `Xenova/multilingual-e5-small` on the local CPU; enabling it can download model files to the local cache. The resolved immutable model revision is persisted, but this is not independent artifact-signature verification: see the limitations below. Reindex after enabling/changing the local model.
 
@@ -260,7 +314,7 @@ OCR/media are optional local capabilities, **not bundled turn-key transcription*
 
 Calendar previews show the chosen calendar, time zone, attendees and invitation effects. Approvals expire after 15 minutes. Changed events require a fresh proposal; recurring-event editing remains in the provider. After a network failure, inspect the provider before retrying an uncertain write.
 
-Closing the window can leave Relay Desk in the tray. Quit stops it. Start-at-login is optional. Sync and automation do not run when the app is quit, the machine sleeps or Windows is off.
+Closing the window can leave Relay Desk in the tray. Quit stops it. Start-at-login is optional. Sync and automation do not run when the app is quit, the machine sleeps or is off.
 
 ## Current scope and release gaps
 

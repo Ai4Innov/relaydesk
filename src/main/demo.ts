@@ -35,14 +35,22 @@ export function demoData() {
     priority: index === 0 ? "urgent" : "important", status: "open", confidence: 0.9,
     citations: [{ id: message.id, messageId: message.id, title: message.subject, excerpt: message.body }]
   }));
-  const start = new Date(now);
-  start.setHours(15, 0, 0, 0);
-  const events: CalendarEvent[] = [{
-    id: "demo-event", accountId: "demo-gmail", sourceId: "demo-calendar", providerId: "sample-event",
-    title: "Launch readiness review", start: start.toISOString(), end: new Date(start.getTime() + 1800000).toISOString(),
-    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, allDay: false, attendees: ["maya@example.com"],
-    location: "Video call", description: "Review rollout readiness and open decisions.", revision: "sample-1", url: "", writable: false
-  }];
+  // Sample events are relative to tomorrow so the agenda is never empty and shows one overlap to review.
+  const day = new Date(now);
+  day.setDate(day.getDate() + 1);
+  const at = (offsetDays: number, hours: number, minutes = 0) => { const value = new Date(day); value.setDate(day.getDate() + offsetDays); value.setHours(hours, minutes, 0, 0); return value; };
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const sample = (id: string, title: string, start: Date, minutes: number, attendees: string[], location: string, description: string): CalendarEvent => ({
+    id, accountId: "demo-gmail", sourceId: "demo-calendar", providerId: id, title, start: start.toISOString(),
+    end: new Date(start.getTime() + minutes * 60000).toISOString(), timeZone, allDay: false, attendees, location, description,
+    revision: "sample-1", url: "", writable: false
+  });
+  const events: CalendarEvent[] = [
+    sample("demo-event", "Launch readiness review", at(0, 10), 45, ["maya@example.com"], "Video call", "Review rollout readiness and open decisions."),
+    sample("demo-event-design", "Design handoff sync", at(0, 10, 30), 30, ["sam@example.com"], "Room 4", "Confirm the optional workspace step before engineering starts."),
+    sample("demo-event-workshop", "Customer workshop", at(1, 14), 90, ["jordan@example.com"], "Contoso office", "Goals, current workflow and next steps."),
+    sample("demo-event-planning", "Quarterly planning", at(2, 9, 30), 60, ["priya@example.com"], "Video call", "Waiting on finance for approved estimates.")
+  ];
   const attachments: Attachment[] = [{
     id: "demo-attachment", accountId: "demo-gmail", messageId: messages[0].id, providerId: "sample-file",
     name: "rollout-plan.pdf", mimeType: "application/pdf", size: 27000000, status: "awaiting-approval",

@@ -2,7 +2,7 @@
 
 ## Process and trust boundaries
 
-`src\main\app.ts` owns the Electron lifecycle, tray, Windows credential protection, native file dialogs and trusted IPC. It constructs `RelayService`, which coordinates provider access, jobs, drafts, approvals, retrieval and AI.
+`src\main\app.ts` owns the Electron lifecycle, tray, OS credential protection, native file dialogs and trusted IPC. It constructs `RelayService`, which coordinates provider access, jobs, drafts, approvals, retrieval and AI.
 
 The renderer runs with Node integration disabled, context isolation and sandboxing enabled. New windows, navigation away from the application and permission requests are denied. The narrow preload bridge exposes snapshots and application commands, not arbitrary filesystem, SQL, shell or credential access. `ipc\schema.ts` rejects unknown command fields and privileged commands absent from the allowlist. In particular, UI patches cannot reset `aiRunsToday` or `aiUsageDate`.
 
@@ -10,7 +10,9 @@ The `RelayService.command` TypeScript method is internal; runtime validation hap
 
 ## Persistent data
 
-`storage\vault.ts` uses `better-sqlite3-multiple-ciphers` in SQLCipher mode. The application refuses to start if Windows `safeStorage` encryption is unavailable. A random 32-byte archive key is protected in `archive-key.dpapi`; the database does not fall back to plaintext.
+`storage\vault.ts` uses `better-sqlite3-multiple-ciphers` in SQLCipher mode. The application refuses to start if Electron `safeStorage` encryption is unavailable, and on Linux also when only the plaintext `basic_text` backend exists. A random 32-byte archive key is protected in `archive-key.dpapi` (Windows DPAPI) or `archive-key.safestorage` (macOS Keychain, Linux Secret Service); the database does not fall back to plaintext.
+
+OS differences are isolated in `src/main/platform.ts`: path semantics and case sensitivity, the Copilot session-filesystem root and conventions, the assistant shell (PowerShell on Windows, bash elsewhere) and how the Copilot sign-in terminal is launched.
 
 Records include accounts, source selections, messages, draft state, attachment metadata, calendars, approvals, settings, credentials, jobs and checkpoints. FTS5 text and embedding vectors live inside the encrypted database. Original attachment blobs and backups are authenticated encrypted files, with keys derived from the archive key. Model caches are not secret credential stores and are not covered by archive encryption. Decrypted material exists in process memory during use.
 
@@ -28,7 +30,7 @@ Backups are encrypted, key-bound recovery artifacts. Restore replaces the local 
 - Draft generation/editing changes the local archive only. Native draft saving requires its own command and source-revision check. A save is marked uncertain before the provider call; an ambiguous failure must be reconciled manually.
 - Calendar proposals bind the exact payload to a SHA-256 hash. Approval checks hash, payload, time window and single-use status before writing. Calendar audit records retain the payload hash. The provider may notify attendees; no automatic event deletion is exposed.
 
-The service is not a distributed durable job broker. It does not continue while the process or Windows is stopped, and not every operation is automatically retryable.
+The service is not a distributed durable job broker. It does not continue while the process or computer is stopped, and not every operation is automatically retryable.
 
 ### Provider-specific coverage
 
@@ -42,7 +44,7 @@ Microsoft draft updates use conditional writes. Gmail checks the remote draft re
 
 `copilot\index.ts` dynamically loads the official SDK, uses the logged-in user's identity and checks authentication and the entitled model list. Ambient GitHub token overrides are removed from the child environment. There is no AI-provider key field and no alternate paid-provider fallback.
 
-The client uses SDK `mode: "copilot-cli"` so the runtime can access the Windows credential store used by CLI login. SDK `mode: "empty"` forces `COPILOT_DISABLE_KEYTAR=1`, preventing that discovery. Session isolation is configured explicitly rather than inherited from empty mode: experimental features, scheduling, coauthor behavior and skills are disabled, MCP OAuth storage remains in memory, and installed plugins are cleared before any prompt is sent.
+The client uses SDK `mode: "copilot-cli"` so the runtime can access the OS credential store used by CLI login. SDK `mode: "empty"` forces `COPILOT_DISABLE_KEYTAR=1`, preventing that discovery. Session isolation is configured explicitly rather than inherited from empty mode: experimental features, scheduling, coauthor behavior and skills are disabled, MCP OAuth storage remains in memory, and installed plugins are cleared before any prompt is sent.
 
 Each request creates a fresh, model-specific session. Its filesystem provider is in-memory. General built-in/MCP tools, plugins, skill/config/instruction discovery, host Git operations, file hooks, persistent memory, session store/telemetry and embedding retrieval are disabled. Permission requests are denied. Non-chat generation has no tools. Chat explicitly allowlists app-owned read and proposal tools with deterministic source checks; proposals cannot execute provider writes. These choices constrain the app session; they do not make Copilot's remote service offline or establish its retention policy.
 

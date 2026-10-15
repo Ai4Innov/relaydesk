@@ -228,9 +228,10 @@ an inbox snippet as the full email.
   default-on queue downloads permitted files using the exact native attachment
   link in a verified account/message through the browser Downloads API. Install
   the updated companion and allow its Downloads permission. Downloads temporarily
-  use a request-specific `RelayDesk` subdirectory under Windows Downloads, then
+  use a request-specific `RelayDesk` subdirectory under the user's `Downloads` folder
+  (Windows, macOS or Linux), then
   the exact verified file is encrypted and that temporary copy removed.
-  Custom browser download directories outside Windows Downloads require the manual
+  Custom or localized download directories not named `Downloads` require the manual
   import fallback. Cookies, credentials and arbitrary cloud links are not extracted.
   Unknown-size, large and costly files require approval; browser safety warnings
   are never bypassed. **Download and index** retries an individual file, while

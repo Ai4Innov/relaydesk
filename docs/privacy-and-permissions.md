@@ -18,7 +18,7 @@ Follow the [provider setup guide](provider-setup.md) for registration, redirect 
 | Relevant excerpts for an AI draft/question | GitHub Copilot service after account AI opt-in; not the entire archive by default. Citations can include attachment text. |
 | Native email draft | Gmail/Outlook only after an explicit Save draft action. |
 | Calendar change | Selected provider calendar after exact approval; invitations/updates can notify attendees. |
-| Slack response | Local draft and, on request, the Windows clipboard. Posting is done by the user outside Relay Desk. |
+| Slack response | Local draft and, on request, the system clipboard. Posting is done by the user outside Relay Desk. |
 | WhatsApp Web | Only loaded messages in explicitly selected chats, after local-ingestion consent and verified own-profile phone identity. AI sharing is a separate opt-in; replies stay local for manual copy/send. |
 | Internal document preview | Local PDF/image rendering or extracted text; no executable embedded content or remote document service. |
 | Save to Downloads | Explicit export of a retained original through the native save dialog. The resulting ordinary file is outside the encrypted archive and is not erased when an account is forgotten. |
@@ -70,9 +70,9 @@ Synchronization can be paused. Background AI and start-at-login are off by defau
 
 ## Storage and recovery
 
-Database contents, derived indexes, provider credentials and attachment originals are encrypted locally. Windows protects the archive key using Electron `safeStorage`. This protects data at rest, **not** against malware running as your logged-in Windows user, screen capture, process-memory access or a compromised operating system.
+Database contents, derived indexes, provider credentials and attachment originals are encrypted locally. The operating system protects the archive key through Electron `safeStorage`: DPAPI on Windows, Keychain on macOS and Secret Service (GNOME Keyring/KWallet) on Linux. This protects data at rest, **not** against malware running as your logged-in user, screen capture, process-memory access or a compromised operating system.
 
-Backup files are encrypted with this archive's key and require that same key to restore. `archive-key.dpapi` is tied to Windows protection; copying only a backup to a new machine/user profile is not a supported recovery procedure. Keep appropriately protected system/profile backups and test your recovery process. No cloud backup, password recovery or automatic cross-machine key export is provided.
+Backup files are encrypted with this archive's key and require that same key to restore. The key file (`archive-key.dpapi` or `archive-key.safestorage`) is tied to the OS user's protection; copying only a backup to a new machine/user profile is not a supported recovery procedure. Keep appropriately protected system/profile backups and test your recovery process. No cloud backup, password recovery or automatic cross-machine key export is provided.
 
 Restoring replaces the local archive. Sync/background AI are paused afterward, and restored approvals cannot be replayed. Review account access/source selections and provider state before resuming; a backup does not roll back actions already performed in a mailbox/calendar.
 
