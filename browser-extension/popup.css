@@ -1,0 +1,15 @@
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; font-size: 13px; }
+body { box-sizing: border-box; width: 360px; margin: 0; padding: 18px; }
+h1 { font-size: 20px; margin: 0 0 12px; }
+p { line-height: 1.5; }
+label { display: block; margin-bottom: 6px; font-weight: 600; }
+.pair-row { display: flex; gap: 8px; }
+input { box-sizing: border-box; min-width: 0; flex: 1; padding: 8px; border: 1px solid #8793a6; border-radius: 5px; }
+button { cursor: pointer; border: 1px solid #8793a6; border-radius: 5px; padding: 8px 10px; font: inherit; font-weight: 600; }
+button:disabled { opacity: .55; cursor: wait; }
+button:focus-visible, input:focus-visible { outline: 2px solid #4389ef; outline-offset: 2px; }
+.actions { display: grid; gap: 8px; margin-top: 14px; }
+.secondary { font-weight: 400; }
+#status { padding: 10px; border: 1px solid #8793a6; border-radius: 5px; overflow-wrap: anywhere; }
+#status:empty { display: none; }
+.note { font-size: 12px; opacity: .8; }

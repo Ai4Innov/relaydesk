@@ -1,0 +1,62 @@
+import { afterAll, describe, expect, it } from "vitest";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createDocument, parseMarkdown, safeDocumentName } from "../src/main/documents";
+import { insidePath, WorkspaceSessionFs } from "../src/main/copilot/workspace-fs";
+import { MemorySessionFs } from "../src/main/copilot/memory-fs";
+
+const dirs: string[] = [];
+const temp = async () => { const dir = await mkdtemp(join(tmpdir(), "relay-tools-")); dirs.push(dir); return dir; };
+afterAll(async () => { for (const dir of dirs) await rm(dir, { recursive: true, force: true }); });
+
+const markdown = "# Weekly report\n\nSome **bold** and *italic* text.\n\n- First\n- Second\n\n1. One\n2. Two\n\n| Name | Value |\n| --- | --- |\n| A | 1 |\n\n## Next\n\nMore text.";
+
+describe("assistant document generation", () => {
+  it("parses markdown blocks", () => {
+    expect(parseMarkdown(markdown).map(block => block.kind)).toEqual(["heading", "paragraph", "bullet", "bullet", "bullet", "bullet", "table", "heading", "paragraph"]);
+    expect(safeDocumentName("..\\evil:name?", "docx")).not.toMatch(/[\\/:?]/);
+  });
+  it.each(["docx", "xlsx", "pptx"] as const)("writes a real %s file inside the workspace", async format => {
+    const dir = await temp();
+    const created = await createDocument(dir, { fileName: "report", format, title: "Weekly report", content: markdown,
+      sheets: format === "xlsx" ? [{ name: "Data", rows: [["Name", "Value"], ["A", "1"]] }] : undefined });
+    expect(insidePath(dir, created.path)).toBe(true);
+    expect(created.name).toBe(`report.${format}`);
+    const bytes = await readFile(created.path);
+    expect(bytes.subarray(0, 2).toString()).toBe("PK");
+    expect(created.size).toBe(bytes.length);
+  });
+  it("does not overwrite an existing file unless asked", async () => {
+    const dir = await temp();
+    const first = await createDocument(dir, { fileName: "notes", format: "md", content: "one" });
+    const second = await createDocument(dir, { fileName: "notes", format: "md", content: "two" });
+    expect(second.path).not.toBe(first.path);
+    expect(await readFile(first.path, "utf8")).toContain("one");
+  });
+});
+
+describe("workspace session filesystem", () => {
+  it("allows the workspace, keeps session state in memory and denies other paths", async () => {
+    const workspace = await temp(), outside = await temp();
+    await writeFile(join(outside, "secret.txt"), "secret");
+    const fs = new WorkspaceSessionFs(new MemorySessionFs(), workspace);
+    await fs.writeFile(join(workspace, "a.txt"), "hello");
+    expect(await readFile(join(workspace, "a.txt"), "utf8")).toBe("hello");
+    expect(await fs.readFile(join(workspace, "a.txt"))).toBe("hello");
+    await fs.mkdir("C:\\relay-session\\state", true);
+    await fs.writeFile("C:\\relay-session\\state\\x.json", "{}");
+    expect(await fs.readFile("C:\\relay-session\\state\\x.json")).toBe("{}");
+    await expect(fs.readFile(join(outside, "secret.txt"))).rejects.toMatchObject({ code: "EACCES" });
+    await expect(fs.writeFile(join(outside, "new.txt"), "x")).rejects.toMatchObject({ code: "EACCES" });
+    await expect(fs.writeFile(join(workspace, "..", "escape.txt"), "x")).rejects.toMatchObject({ code: "EACCES" });
+  });
+  it("allows reads, never writes, for user-approved outside paths", async () => {
+    const workspace = await temp(), outside = await temp();
+    const file = join(outside, "approved.txt");
+    await writeFile(file, "ok");
+    const fs = new WorkspaceSessionFs(new MemorySessionFs(), workspace, path => path.toLowerCase() === file.toLowerCase());
+    expect(await fs.readFile(file)).toBe("ok");
+    await expect(fs.writeFile(file, "changed")).rejects.toMatchObject({ code: "EACCES" });
+  });
+});

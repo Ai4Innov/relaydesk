@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Relay Desk</title>
+  <link rel="stylesheet" href="popup.css">
+  <script src="popup.js" defer></script>
+</head>
+<body>
+  <h1>Relay Desk</h1>
+  <p>Pair this browser profile using only the desktop code. No account link or open email tab is required. Discover your signed-in accounts after pairing.</p>
+  <p id="pair-state">Checking pairing...</p>
+  <form id="pair-form">
+    <label for="code">Pairing code from the desktop app</label>
+    <div class="pair-row">
+      <input id="code" name="code" autocomplete="off" spellcheck="false" maxlength="128" required placeholder="Desktop pairing code">
+      <button type="submit">Pair</button>
+    </div>
+  </form>
+  <details>
+  <summary>Add account by link (optional)</summary>
+  <form id="account-link-form">
+    <label for="account-link">Optional signed-in account link</label>
+    <div class="pair-row">
+      <input id="account-link" type="url" required maxlength="4096" autocomplete="off" placeholder="https://mail.google.com/mail/u/2/">
+      <button type="submit">Add account by link</button>
+    </div>
+    <p class="note">Not needed for pairing. Paste a Gmail or Google Calendar URL only to open a particular account in this profile. The signed-in Google header is verified; message, search and event details are removed.</p>
+  </form>
+  </details>
+  <section aria-label="Agent browser tabs">
+    <p id="tab-state" role="status" aria-live="polite">Checking agent tabs...</p>
+    <p id="tab-reason" class="note" role="status" aria-live="polite"></p>
+    <p class="note">Idle agent tabs are reused automatically: up to 6 mail workers and 24 account views. Safely idle tabs expire after 15 minutes. Your own tabs, active work, and unsaved forms are left untouched.</p>
+    <button id="cleanup-agent-tabs" type="button" class="secondary">Close idle agent tabs</button>
+    <button id="refresh-tab-state" type="button" class="secondary">Refresh tab status</button>
+  </section>
+  <div class="actions">
+    <button id="open-whatsapp" type="button">Open WhatsApp Web</button>
+    <button id="connect" type="button">Connect current tab</button>
+    <button id="discover-signed-in-accounts" type="button">Discover signed-in Google accounts</button>
+    <button id="discover-open-tabs" type="button">Discover open Google accounts</button>
+    <button id="capture" type="button">Capture now</button>
+    <button id="reload" type="button" class="secondary">Reload companion after update</button>
+    <button id="fresh-account-views" type="button" class="secondary">Open fresh account views</button>
+    <button id="forget" type="button" class="secondary">Forget pairing</button>
+  </div>
+  <p id="status" role="status" aria-live="polite"></p>
+  <p class="note">Gmail attachments: the Downloads permission lets Relay Desk save verified native attachment links for local indexing. Files temporarily use a RelayDesk subfolder of Downloads before encrypted import. Large, unknown-size, and costly files need approval in the desktop app. Browser safety warnings are never bypassed; cloud links and WhatsApp files are not automatically downloaded.</p>
+  <p class="note">WhatsApp: link your phone normally, open a conversation, then keep your own Profile panel's Phone number visible. Connect current tab, enable local ingestion and select that chat in Relay Desk, then Capture now. AI starts off. Loaded text only, not all history; supported file names are metadata, not downloaded files. Replies stay local: Relay Desk never clicks Send.</p>
+  <p class="note">Discover signed-in Google accounts asks for optional access to Google's account menu only. It reads visible account-switch rows, not passwords, cookies, messages, or credentials. Every candidate must still open a normal Gmail inbox and pass Google's loaded top-header identity check before Relay Desk registers it.</p>
+  <p class="note">Accounts appear after their Google headers load. Expired accounts are skipped and need to be signed in again. Discovery applies only to this paired browser profile; pair other Edge profiles or browsers separately.</p>
+  <p class="note">Discover open Google accounts keeps the existing loaded-tab flow for Gmail and Calendar tabs that are already open.</p>
+  <p class="note">Hidden tabs can disclose account metadata, but content capture stays paused until a selected Gmail or Calendar tab is visible.</p>
+  <p class="note">Reload companion keeps your pairing. Reopen this popup and reload your Gmail/Calendar tabs after updating.</p>
+  <p class="note">Open fresh account views reuses responsive account views and safe agent tabs before opening another. Original tabs and unsaved forms are not reloaded or closed. Older tabs without recorded agent ownership must be closed manually.</p>
+  <p class="note">Only visible, loaded pages are captured, read-only. No full-history guarantee or capture with the browser closed. Content goes only to your local desktop archive, not a model.</p>
+</body>
+</html>

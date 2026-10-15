@@ -1,0 +1,28 @@
+import type { Settings } from "./contracts";
+export const defaultSettings: Settings = {
+  model: "",
+  dailyAiLimit: 20,
+  aiRunsToday: 0,
+  aiUsageDate: new Date().toISOString().slice(0, 10),
+  backgroundAi: false,
+  syncPaused: false,
+  startAtLogin: false,
+  closeToTray: true,
+  notifications: false,
+  refreshIntervalSeconds: 60,
+  browserBackgroundCapture: false,
+  browserFullMailDownload: true,
+  browserAttachmentDownload: true,
+  playwrightMailEnabled: false,
+  browserMailTransport: "auto",
+  attachmentThresholdMb: 25,
+  semanticEnabled: false,
+  embeddingModel: "Xenova/multilingual-e5-small",
+  googleClientId: "",
+  microsoftClientId: "",
+  microsoftTenant: "common",
+  assistantTools: true,
+  assistantWorkspaceDir: "",
+  assistantShell: "ask",
+  assistantWeb: "ask"
+};

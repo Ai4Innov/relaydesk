@@ -1,0 +1,54 @@
+# Dependencies and build output
+node_modules/
+.vite/
+out/
+dist/
+
+# Test artifacts and local browser profiles
+test-results/
+playwright-report/
+.test-data/
+.playwright-mail-tests/
+.calendar-actions-test-profile/
+tests/.download-fixture-*/
+playwright-gmail-profile/
+copilot-workspace/
+
+# Logs and local environment
+*.log
+.env
+.env.*
+!.env.example
+
+# Credentials: never commit OAuth client files or tokens
+client_secret_*.json
+*.pem
+*.p12
+*.pfx
+*.key
+
+# Local archive data and key-bound backups, even if copied into the repository
+archive-key.dpapi
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
+*.backup
+*.blob
+
+# Gmail exports contain complete messages and attachment originals
+Gmail-export_*/
+*.eml
+*.msg
+
+# Default assistant-created documents (may contain private message excerpts)
+Relay Desk/
+
+# Personal working copies (scripts configured with private IDs)
+ai/
+
+# Editor/OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

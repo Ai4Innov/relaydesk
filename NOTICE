@@ -1,0 +1,47 @@
+Relay Desk
+Copyright 2026 Ai4Innov
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+-------------------------------------------------------------------------------
+Third-party software
+-------------------------------------------------------------------------------
+
+Relay Desk depends on third-party open-source packages installed through npm.
+Each package is distributed under its own license, recorded in its
+node_modules/<package>/LICENSE file and in package-lock.json. At the time of
+writing, runtime dependencies use permissive licenses (MIT, ISC, BSD-2-Clause,
+BSD-3-Clause, Apache-2.0), with these notable exceptions and remarks:
+
+* sharp (@img/sharp-win32-x64) bundles libvips, which is licensed under
+  LGPL-3.0-or-later. libvips is shipped as a separate, dynamically loaded
+  library and can be replaced by the recipient as permitted by the LGPL.
+  Source: https://github.com/libvips/libvips
+
+* jszip is dual-licensed (MIT OR GPL-3.0-or-later); Relay Desk uses it under
+  the MIT license.
+
+* Packaged builds include Electron and Chromium. Their licenses and
+  third-party notices are shipped in the packaged application as
+  LICENSE and LICENSES.chromium.html.
+
+* @github/copilot-sdk and its platform runtime packages are distributed by
+  GitHub under the MIT license. Using GitHub Copilot through them is subject
+  to your GitHub Copilot plan and the GitHub Terms for Additional Products
+  and Features. Relay Desk does not include or grant any Copilot entitlement.
+
+* Optional local models (for example Xenova/multilingual-e5-small, Tesseract
+  language data, whisper.cpp models) are downloaded or supplied by the user
+  and are governed by their own licenses. They are not redistributed with
+  this source code.
+
+-------------------------------------------------------------------------------
+Trademarks
+-------------------------------------------------------------------------------
+
+"Relay Desk" and "Ai4Innov" are names of this project and its maintainer.
+GitHub, Copilot, Gmail, Google Workspace, Google Calendar, Google Apps Script,
+Microsoft 365, Outlook, Slack and WhatsApp are trademarks of their respective
+owners. Their use here is only descriptive and does not imply affiliation or
+endorsement. The Apache License does not grant permission to use these names
+(Section 6).

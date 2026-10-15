@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Relay Desk Browser Companion",
+  "version": "0.1.0",
+  "description": "Capture selected Google and WhatsApp Web pages; apply explicitly reviewed Calendar moves through visible controls.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuc/IkypkQsI+1SPOXIRRAbg5eHLHqc3+YngW3ajjke/j6fsEYpj8UlGmkpaz+0c8Q6JB5nyPmGmUFs94HPeMu/tSATX98/xboKf8vgG6ds6fQJ6E993RmufjlLJR2K7BpxZK6bGhn8byJ2o2sV8IOoJfey2nEmgf3TFPgLyQP097hYW0b+uAPKOAjF04aTwGR0lRDO3sQqdmSqpHoKZj2e4Wbr8VRQHGMUYOVkDNtfM5TgpqaOVR6YVnIrKdNC3Gt5d08GWoz3su8lxC/KIsF0XPSWzhQ4Opj9PcTFcdijL88ziXAksPqc4SFmAaLnCTZkhg8YAwmK9ctvz7vyOQCQIDAQAB",
+  "permissions": ["storage", "alarms", "downloads"],
+  "optional_permissions": ["scripting"],
+  "optional_host_permissions": ["https://ogs.google.com/*"],
+  "host_permissions": [
+    "https://mail.google.com/*",
+    "https://calendar.google.com/*",
+    "https://web.whatsapp.com/*",
+    "http://127.0.0.1:43891/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_popup": "popup.html", "default_title": "Relay Desk" },
+  "content_scripts": [{
+    "matches": ["https://mail.google.com/*", "https://calendar.google.com/*", "https://web.whatsapp.com/*"],
+    "js": ["whatsapp.js", "extractors.js", "calendar-actions.js", "mail-read.js", "content.js"],
+    "run_at": "document_idle",
+    "all_frames": false,
+    "world": "ISOLATED"
+  }],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; connect-src http://127.0.0.1:43891"
+  }
+}
