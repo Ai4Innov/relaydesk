@@ -8,6 +8,9 @@ import { CalendarAccessCard } from "./CalendarAccessCard";
 import { SetupGuide, useSetupGuide } from "./SetupGuide";
 import { accessibleDocument, DocumentActions } from "./DocumentViewer";
 import "./chat.css";
+import { activeAi } from "./ai";
+
+const CONNECT_TITLES = { copilot: "Bring your Copilot subscription.", claude: "Bring your Anthropic API key.", codex: "Bring your ChatGPT plan through Codex." } as const;
 
 type Run = (command: Command, success?: string) => Promise<CommandResult | undefined>;
 type ToolPage = "inbox" | "productivity" | "calendar" | "activity" | "settings" | "archive";
@@ -124,6 +127,7 @@ export function Chat({ data, run, navigate }: ChatProps) {
   const onboarding = guide.visible && !conversation?.turns.length;
   const blocked = chatBusy || requestPending;
   const ready = data.copilot.status === "ready";
+  const ai = activeAi(data);
   const availableModel = data.models.some(item => item.id === model);
   const eligibleAccounts = data.accounts.filter(account => account.aiEnabled && account.consent && account.status === "connected");
   const eligibleSources = data.sources.filter(source => source.selected && eligibleAccounts.some(account => account.id === source.accountId));
@@ -238,7 +242,7 @@ export function Chat({ data, run, navigate }: ChatProps) {
     finally { requestLock.current = false; setRequestPending(false); }
   };
 
-  return <section className="chat-shell" aria-label="Copilot chat workspace">
+  return <section className="chat-shell" aria-label="Assistant chat workspace">
     <aside className="chat-history" aria-label="Conversation history">
       <div className="chat-history-heading"><span className="eyebrow">YOUR CONVERSATIONS</span><button className="icon-button" aria-label="New chat" title="New chat" disabled={blocked} onClick={() => void newChat()}><Plus size={19}/></button></div>
       <div className="chat-history-list">
@@ -252,18 +256,18 @@ export function Chat({ data, run, navigate }: ChatProps) {
       <div className="chat-history-footer"><ShieldCheck size={15}/><span>Saved in your encrypted local archive.</span></div>
     </aside>
     <div className="chat-main">
-      <header className="chat-header"><div><div className="eyebrow">YOUR COPILOT, IN CONTEXT</div><h1>{conversation?.title || "Let's move work forward."}</h1></div><span className={`chat-connection ${ready ? "ready" : ""}`}><span className="status-dot"/>{ready ? "Copilot connected" : data.copilot.status === "connecting" ? "Connecting…" : "Connect to begin"}</span></header>
-      <div className="chat-scope"><ShieldCheck size={14}/><div><strong>AI scope: </strong>{scopedAccounts.length ? `${scopedAccounts.length} opted-in account${scopedAccounts.length === 1 ? "" : "s"} · ${eligibleSources.length} selected source${eligibleSources.length === 1 ? "" : "s"}` : "No connected, opted-in sources"}<span> · Only authorized imported context; browser captures may be partial.</span><details><summary>View coverage</summary><p>{scopedAccounts.length ? scopedAccounts.map(account => account.email || account.name).join(" · ") : "Choose sources and enable account AI consent in Settings. Chat does not grant source access."}</p>{data.aiReview && <p>Archive review: {data.aiReview.reviewed} of {data.aiReview.totalEligible} eligible messages reviewed; {data.aiReview.remaining} remaining. Excluded sources are not available to Copilot.</p>}<p>Selected sources are not a guarantee of full mailbox or calendar coverage. Copilot is a cloud service; your subscription and model access apply.</p></details></div><button className="text-button" onClick={() => navigate("settings")}>Manage scope</button></div>
-      {!ready && !onboarding && <div className="chat-connect-panel"><Sparkles size={21}/><div><strong>Bring your Copilot subscription.</strong><p>{data.copilot.message || "Connect Copilot to ask questions and work with your authorized sources."}</p></div><div className="button-row wrap"><button className="small" disabled={data.copilot.status === "connecting" || requestPending} onClick={() => void run({ type: "copilot.connect" })}>Connect Copilot</button><button className="secondary small" disabled={data.copilot.status === "connecting" || requestPending} onClick={() => void run({ type: "copilot.login" })}>Sign in</button></div></div>}
+      <header className="chat-header"><div><div className="eyebrow">YOUR ASSISTANT, IN CONTEXT</div><h1>{conversation?.title || "Let's move work forward."}</h1></div><span className={`chat-connection ${ready ? "ready" : ""}`}><span className="status-dot"/>{ready ? `${ai.name} connected` : data.copilot.status === "connecting" ? "Connecting…" : "Connect to begin"}</span></header>
+      <div className="chat-scope"><ShieldCheck size={14}/><div><strong>AI scope: </strong>{scopedAccounts.length ? `${scopedAccounts.length} opted-in account${scopedAccounts.length === 1 ? "" : "s"} · ${eligibleSources.length} selected source${eligibleSources.length === 1 ? "" : "s"}` : "No connected, opted-in sources"}<span> · Only authorized imported context; browser captures may be partial.</span><details><summary>View coverage</summary><p>{scopedAccounts.length ? scopedAccounts.map(account => account.email || account.name).join(" · ") : "Choose sources and enable account AI consent in Settings. Chat does not grant source access."}</p>{data.aiReview && <p>Archive review: {data.aiReview.reviewed} of {data.aiReview.totalEligible} eligible messages reviewed; {data.aiReview.remaining} remaining. Excluded sources are not available to {ai.name}.</p>}<p>Selected sources are not a guarantee of full mailbox or calendar coverage. {ai.name} is a cloud service; your plan and model access apply.</p></details></div><button className="text-button" onClick={() => navigate("settings")}>Manage scope</button></div>
+      {!ready && !onboarding && <div className="chat-connect-panel"><Sparkles size={21}/><div><strong>{CONNECT_TITLES[ai.id]}</strong><p>{data.copilot.message || `Connect ${ai.name} to ask questions and work with your authorized sources.`}</p></div><div className="button-row wrap"><button className="small" disabled={data.copilot.status === "connecting" || requestPending} onClick={() => void run({ type: "copilot.connect" })}>Connect {ai.name}</button>{ai.id === "claude" ? <button className="secondary small" onClick={() => navigate("settings")}>Add API key</button> : <button className="secondary small" disabled={data.copilot.status === "connecting" || requestPending} onClick={() => void run({ type: "copilot.login" })}>Sign in</button>}</div></div>}
       <div className="chat-transcript" ref={scroller} onScroll={() => {
         const element = scroller.current;
         if (element) { nearBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 96; if (nearBottom.current) setNewMessages(false); }
       }}>
-        {calendarAccessAccounts.map(account => <CalendarAccessCard key={account.id} account={account} sources={data.sources.filter(source => source.accountId === account.id && source.selected)} run={run} blocked={blocked} manageSources={() => navigate("settings")}/>)}
+        {calendarAccessAccounts.map(account => <CalendarAccessCard key={account.id} aiName={ai.name} account={account} sources={data.sources.filter(source => source.accountId === account.id && source.selected)} run={run} blocked={blocked} manageSources={() => navigate("settings")}/>)}
         {!conversation?.turns.length ? <div className={`chat-welcome${onboarding ? " onboarding" : ""}`}>{!onboarding && <div className="chat-welcome-icon"><Sparkles size={30}/></div>}<span className="eyebrow">LESS SWITCHING. MORE HEADSPACE.</span><h2>What can we take off your mind?</h2><p>Ask a question, find the context, or turn a conversation into a next step. You stay in control of every action.</p><SetupGuide data={data} guide={guide} run={run} openSettings={() => navigate("settings")} ask={text => { setDraft(text); composer.current?.focus(); }}/><div className="chat-starters">{starters.map(({ title, detail, text, icon: Icon }) => <button key={title} className="chat-starter" onClick={() => { setDraft(text); composer.current?.focus(); }}><Icon size={19}/><span><strong>{title}</strong><small>{detail}</small></span><ArrowUp size={14}/></button>)}</div><div className="chat-welcome-note"><ShieldCheck size={14}/> Review before acting. Replies stay drafts. Nothing is sent.</div></div> : null}
         <div role="log" aria-label="Chat messages" aria-live="polite" aria-relevant="additions text" className="chat-turns">
-          {conversation?.turns.map(turn => <article key={turn.id} className={`chat-turn chat-turn-${turn.role}`} aria-label={`${turn.role === "user" ? "You" : "Copilot"} message`}>
-            <div className="chat-turn-meta"><span className="chat-avatar">{turn.role === "user" ? "Y" : <Sparkles size={15}/>}</span><strong>{turn.role === "user" ? "You" : "Copilot"}</strong>{turn.model && <span>{data.models.find(item => item.id === turn.model)?.name ?? turn.model}</span>}<time dateTime={turn.createdAt}>{new Date(turn.createdAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}</time></div>
+          {conversation?.turns.map(turn => <article key={turn.id} className={`chat-turn chat-turn-${turn.role}`} aria-label={`${turn.role === "user" ? "You" : "Assistant"} message`}>
+            <div className="chat-turn-meta"><span className="chat-avatar">{turn.role === "user" ? "Y" : <Sparkles size={15}/>}</span><strong>{turn.role === "user" ? "You" : "Assistant"}</strong>{turn.model && <span>{data.models.find(item => item.id === turn.model)?.name ?? turn.model}</span>}<time dateTime={turn.createdAt}>{new Date(turn.createdAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}</time></div>
             {turn.role === "assistant" && turn.mailRefresh === "local" && <p className="chat-mail-provenance"><Inbox size={14}/><span>Using saved messages · No download requested for this answer. Newer mail may not be included.</span></p>}
             {turn.mailRefresh !== "local" && !!turn.mailFreshness?.length && <details className="citations" aria-label="Inbox freshness">
               <summary>{turn.mailFreshness.every(result => result.status === "fresh") ? "Inbox refreshed before this answer" : "Inbox refresh incomplete - cached evidence may be stale"}</summary>
@@ -290,7 +294,7 @@ export function Chat({ data, run, navigate }: ChatProps) {
       </div>
       {newMessages && <button className="chat-latest secondary small" onClick={scrollToLatest}><ArrowDown size={14}/>Jump to latest</button>}
       <div className="chat-composer-area">
-        {chatBusy && !conversation?.turns.some(turn => turn.status === "working") && <p className="chat-progress" role="status"><LoaderCircle size={14} className="spin"/>Copilot is working in another conversation.</p>}
+        {chatBusy && !conversation?.turns.some(turn => turn.status === "working") && <p className="chat-progress" role="status"><LoaderCircle size={14} className="spin"/>{ai.name} is working in another conversation.</p>}
         {error && <div className="chat-local-error" role="alert"><CircleAlert size={15}/><span>{error}</span><button className="icon-button" aria-label="Dismiss chat error" onClick={() => setError("")}><X size={14}/></button></div>}
         {pendingQuestion && <section className="chat-refresh-choice" role="group" aria-labelledby="chat-refresh-title" aria-describedby="chat-refresh-description" onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); cancelRefresh(); } }}>
           <div className="chat-refresh-heading"><span className="chat-refresh-icon"><Download size={19}/></span><div><span className="eyebrow">YOUR CHOICE · THIS QUESTION ONLY</span><h2 id="chat-refresh-title">Do you want to download latest messages before I answer?</h2></div></div>
@@ -302,7 +306,7 @@ export function Chat({ data, run, navigate }: ChatProps) {
           </div>
         </section>}
         <form className="chat-composer" onSubmit={event => { event.preventDefault(); void send(); }}>
-          <label htmlFor="chat-message" className="sr-only">Message Copilot</label>
+          <label htmlFor="chat-message" className="sr-only">Message {ai.name}</label>
           <textarea id="chat-message" ref={composer} rows={3} maxLength={12000} placeholder="Ask, plan, or tell me what you'd like to get done…" value={draft} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (shouldSendChat(event)) { event.preventDefault(); void send(); } }} aria-describedby="chat-composer-help"/>
           <div className="chat-composer-toolbar">
             <label className="model-select"><Sparkles size={14}/><span className="sr-only">Chat model</span><select aria-label="Chat model" value={model} disabled={!data.models.length} onChange={event => { dismissRefresh(); setModel(event.target.value); }}><option value="">{data.models.length ? "Choose a model" : "Connect for available models"}</option>{model && !availableModel && <option value={model} disabled>Unavailable: {model}</option>}{data.models.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
@@ -312,7 +316,7 @@ export function Chat({ data, run, navigate }: ChatProps) {
             </div>
           </div>
         </form>
-        <div id="chat-composer-help" className="chat-composer-help"><span>{ready && !availableModel ? "Choose an available Copilot model to send." : "Enter to send · Shift + Enter for a new line"}</span><span>Review previews before confirming actions.</span></div>
+        <div id="chat-composer-help" className="chat-composer-help"><span>{ready && !availableModel ? `Choose an available ${ai.name} model to send.` : "Enter to send · Shift + Enter for a new line"}</span><span>Review previews before confirming actions.</span></div>
         <nav className="chat-quick-tools" aria-label="Chat quick tools"><span>Open a tool</span>{quickTools.map(({ page, title, icon: Icon }) => <button key={page} className="quiet small" onClick={() => navigate(page)} aria-label={`Open ${title}`}><Icon size={13}/>{title}</button>)}</nav>
       </div>
     </div>

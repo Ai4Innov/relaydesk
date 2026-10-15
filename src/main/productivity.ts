@@ -353,7 +353,7 @@ export class ProductivityService {
         return {
           reportId: record.id,
           message: permitted.length
-            ? "Focus report generated with Copilot narrative and exact source citations."
+            ? "Focus report generated with AI narrative and exact source citations."
             : "Focus report updated, but the eligible sources changed before the narrative could be retained."
         };
       }

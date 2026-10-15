@@ -169,7 +169,7 @@ export function ArchiveReviewPanel({ data, busy, run }: ProductivityProps) {
   const budget = Math.max(0, data.settings.dailyAiLimit - data.settings.aiRunsToday);
   return <section className="card" aria-label="All local email AI review">
     <div className="section-heading"><h2>Review all local email</h2><Badge tone={review?.remaining ? "amber" : "teal"}>{review?.status ?? "not started"}</Badge></div>
-    <p>Scan every eligible email in the local archive, including older and read messages, not just the latest inbox snapshot. Copilot proposes editable tasks and batch reports; nothing is sent or scheduled.</p>
+    <p>Scan every eligible email in the local archive, including older and read messages, not just the latest inbox snapshot. Your AI provider proposes editable tasks and batch reports; nothing is sent or scheduled.</p>
     <p className="caption">Only selected mail sources on accounts with explicit AI consent are included. Browser capture cannot see unloaded email; previews cover only captured text. Attachment contents are not part of this scan.</p>
     <div className="button-row" role="status" aria-live="polite">
       <Badge>{review?.totalAvailable ?? data.archive.messages} locally available</Badge>
@@ -473,7 +473,7 @@ export function Productivity({ data, busy, run }: ProductivityProps) {
         <section className="card">
           <div className="section-heading"><h2>Focus report</h2><Badge tone="teal">{report?.metrics.workloadLabel ?? "live"}</Badge></div>
           <p className="caption">Snapshot {report ? formatDate(report.snapshotAt, true) : "now"}{report ? ` · narrative ${formatDate(report.generatedAt, true)}` : ""}</p>
-          <label><span className="caption">What should Copilot emphasize?</span><textarea aria-label="Focus report prompt" rows={3} value={reportPrompt} onChange={(event) => setReportPrompt(event.target.value)} maxLength={2000} placeholder="Example: highlight blockers, overdue requests, and what can wait."/></label>
+          <label><span className="caption">What should the assistant emphasize?</span><textarea aria-label="Focus report prompt" rows={3} value={reportPrompt} onChange={(event) => setReportPrompt(event.target.value)} maxLength={2000} placeholder="Example: highlight blockers, overdue requests, and what can wait."/></label>
           {report?.warnings.length ? <ul>{report.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : <p className="muted">No warnings right now.</p>}
           {report?.narrative ? <p className="plain-body">{report.narrative}</p> : <p className="muted">Generate a narrative grounded in selected email citations. Local metrics below stay available offline.</p>}
           {report?.citations.length ? <div className="button-row">{report.citations.map((citation) =>

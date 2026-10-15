@@ -192,8 +192,23 @@ export interface Approval {
   effect: string;
   error?: string;
 }
+export type AiProviderId = "copilot" | "claude" | "codex";
+export interface AiProviderInfo {
+  id: AiProviderId;
+  name: string;
+  /** subscription: reuses the provider CLI's own sign-in; api-key: an encrypted key stored in this archive. */
+  auth: "subscription" | "api-key";
+  status: "disconnected" | "connecting" | "ready" | "error";
+  message: string;
+  hasKey?: boolean;
+}
 export interface Settings {
   model: string;
+  aiProvider: AiProviderId;
+  /** Last model chosen per provider, restored when switching back. */
+  providerModels: Partial<Record<AiProviderId, string>>;
+  /** Optional absolute path to the Codex CLI when it is not discoverable on PATH. */
+  codexPath: string;
   dailyAiLimit: number;
   aiRunsToday: number;
   aiUsageDate: string;
@@ -263,8 +278,11 @@ export interface Snapshot {
   jobs: Job[];
   approvals: Approval[];
   settings: Settings;
+  /** Models of the active AI provider. */
   models: ModelInfo[];
+  /** Connection status of the active AI provider (named for compatibility). */
   copilot: { status: "disconnected" | "connecting" | "ready" | "error"; message: string };
+  ai?: { provider: AiProviderId; providers: AiProviderInfo[] };
   archive: { messages: number; attachments: number; indexed: number; searchMode: "hybrid" | "keyword"; bytes: number };
   demo: boolean;
   browser?: BrowserStatus;
@@ -308,6 +326,9 @@ export type Command =
   | { type: "settings.update"; patch: Partial<Settings> }
   | { type: "copilot.connect" }
   | { type: "copilot.login" }
+  | { type: "ai.provider"; provider: AiProviderId }
+  | { type: "ai.claudeKey"; key: string }
+  | { type: "ai.claudeKey.clear" }
   | { type: "draft.generate"; messageId: string; instruction?: string; model?: string }
   | { type: "draft.edit"; draftId: string; body: string; recipients: string[]; subject: string }
   | { type: "draft.save"; draftId: string }

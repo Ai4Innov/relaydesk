@@ -40,6 +40,15 @@ Microsoft calendar reads refresh a paginated rolling window from 365 days before
 
 Microsoft draft updates use conditional writes. Gmail checks the remote draft revision immediately before updating, but the Gmail draft API path has no documented atomic compare-and-swap guarantee here. An external edit in that small interval can still race; avoid concurrent editing and inspect the provider after uncertain outcomes.
 
+## AI provider layer
+
+`src/main/ai` defines a provider-neutral `AiProvider` interface (`connect`, `generate`, `chat`, `stop`, models and status), shared prompts, the strict response schema and `AppTool`. `AiRouter` sends work to the provider selected in settings (`aiProvider`); `providerModels` remembers each provider's last model, and a model that disappears must be chosen again explicitly.
+
+- `copilot/index.ts`: GitHub Copilot through the official SDK (below).
+- `ai/claude.ts`: Anthropic Messages API with the user's encrypted API key, an explicit base URL and a bounded manual tool loop over app tools plus `workspace-tools.ts`.
+- `ai/codex.ts`: locates the user's Codex CLI (native binary, npm shim or symlink), checks `codex login status`, lists models with `codex debug models`, and runs one isolated `codex exec --json` per request with a strict output schema. App and workspace tools are served by `ai/mcp-bridge.ts`, a minimal MCP streamable-HTTP server on 127.0.0.1 with a per-request bearer token, Host checks and Origin rejection.
+- `ai/workspace-tools.ts`: file, search, document, shell and web tools for Claude and Codex. Writes stay inside the workspace (realpath checks against symlink escapes); outside reads, shell commands and URLs go through the same approval cards as Copilot's built-in tools.
+
 ## Copilot isolation and evidence
 
 `copilot\index.ts` dynamically loads the official SDK, uses the logged-in user's identity and checks authentication and the entitled model list. Ambient GitHub token overrides are removed from the child environment. There is no AI-provider key field and no alternate paid-provider fallback.

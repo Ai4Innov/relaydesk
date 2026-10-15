@@ -11,6 +11,12 @@ import { AttachmentProcessor } from "./attachments";
 import { browserAttachmentGuard, importBrowserAttachment, processRetainedBrowserAttachment } from "./attachments/browser-import";
 import { attachmentViewGuard, saveAttachment, viewAttachment } from "./attachments/viewing";
 import { CopilotAdapter } from "./copilot";
+import { ClaudeAdapter } from "./ai/claude";
+import { CodexAdapter } from "./ai/codex";
+import { AiRouter } from "./ai/router";
+import type { AiProviderId } from "../shared/contracts";
+
+const CLAUDE_KEY_SECRET = "ai:anthropic";
 import { proposeChange, validateApproval } from "./approvals";
 import { BrowserArchive, browserAccountId } from "./browser/archive";
 import { BrowserBridge } from "./browser/bridge";
@@ -38,6 +44,8 @@ interface Host {
   openExternal(url: string): Promise<void>;
   copy(text: string): void;
   loginCopilot(): Promise<void>;
+  /** Opens a terminal running `codex login` with the resolved Codex CLI. */
+  loginCodex?(executable: string): Promise<void>;
   backupPath(): Promise<string | undefined>;
   restorePath(): Promise<string | undefined>;
   importAttachmentPath?(): Promise<string | undefined>;
@@ -64,6 +72,9 @@ export class RelayService {
   readonly retrieval: Retrieval;
   readonly connectors: ConnectorHub;
   readonly copilot: CopilotAdapter;
+  readonly claude: ClaudeAdapter;
+  readonly codex: CodexAdapter;
+  readonly ai: AiRouter;
   readonly attachments: AttachmentProcessor;
   readonly productivity: ProductivityService;
   readonly chat: ChatService;
@@ -95,6 +106,10 @@ export class RelayService {
     this.retrieval = new Retrieval(vault, join(directory, "models"));
     this.connectors = new ConnectorHub(vault, host.openExternal);
     this.copilot = new CopilotAdapter(join(directory, "copilot-workspace"), host.changed);
+    this.claude = new ClaudeAdapter(() => this.vault.get<{ key: string }>("secrets", CLAUDE_KEY_SECRET)?.key, host.changed);
+    this.codex = new CodexAdapter(join(directory, "codex-workspace"), () => this.settings().codexPath, host.changed);
+    this.ai = new AiRouter({ copilot: this.copilot, claude: this.claude, codex: this.codex }, () => this.settings().aiProvider ?? "copilot",
+      id => id === "claude" && !!this.vault.get("secrets", CLAUDE_KEY_SECRET));
     this.attachments = new AttachmentProcessor(
       vault, this.retrieval,
       (attachment, signal) => {
@@ -113,7 +128,7 @@ export class RelayService {
       },
       generate: async (prompt, citations) => {
         const model = this.settings().model;
-        if (!model) throw new Error("Connect Copilot and choose a model in Settings.");
+        if (!model) throw new Error("Connect your AI provider and choose a model in Settings.");
         const revisions = citations.map(citation => {
           const message = this.message(citation.messageId);
           this.requireMessageAi(message);
@@ -121,7 +136,7 @@ export class RelayService {
           return { id: message.id, revision: message.revision };
         });
         return this.runAi(async () => {
-          const result = await this.copilot.generate(prompt, citations, model);
+          const result = await this.ai.generate(prompt, citations, model);
           for (const revision of revisions) {
             const message = this.message(revision.id);
             this.requireMessageAi(message);
@@ -152,7 +167,7 @@ export class RelayService {
       changed: host.changed, settings: () => this.settings(), workspace: () => this.snapshot(),
       search: (query, accountId) => this.retrieval.search(query, accountId),
       refreshMail: request => this.refreshMail(request),
-      generate: request => this.runAi(() => this.copilot.chat(request)),
+      generate: request => this.runAi(() => this.ai.chat(request)),
       workspaceDirectory: () => this.assistantWorkspace(),
       openPath: async (path, reveal) => {
         if (!this.host.openPath) throw new Error("Opening files requires the desktop application.");
@@ -259,7 +274,7 @@ export class RelayService {
           if (route?.transport === "companion" && !this.browser?.status().paired)
             return "Pair the companion in your normally signed-in Chrome or Edge browser to refresh this inbox.";
           if (route?.apiAccountId && !vault.get<Account>("accounts", route.apiAccountId)?.aiEnabled)
-            return "Enable Copilot for this mailbox's Gmail API account before requesting AI summaries of its API-derived emails.";
+            return "Enable AI for this mailbox's Gmail API account before requesting AI summaries of its API-derived emails.";
           if (route?.transport !== "gmail-api" && !this.playwrightMail && !this.browser?.status().paired)
             return "Pair the browser companion to refresh this inbox.";
         }
@@ -428,7 +443,7 @@ export class RelayService {
       drafts: this.vault.all<Draft>("drafts").filter(draft => visibleMessage(draft.messageId)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
       attachments, events: this.vault.all<CalendarEvent>("events").sort((a, b) => a.start.localeCompare(b.start)),
       actions, jobs: this.vault.all<Job>("jobs").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 100),
-      approvals: this.vault.all<Approval>("approvals"), settings, models: this.copilot.models, copilot: this.copilot.status,
+      approvals: this.vault.all<Approval>("approvals"), settings, models: this.ai.models, copilot: this.ai.status, ai: { provider: this.ai.active.id, providers: this.ai.info() },
       archive: { messages: this.vault.count("messages"), attachments: attachments.length, indexed: stats.indexed, searchMode: stats.mode, bytes: this.vault.bytes() },
       demo: accounts.some(account => account.demo), browser: this.browser?.status(),
       gmailRelays: this.relayStatuses(),
@@ -525,13 +540,13 @@ export class RelayService {
   }
   private requireAi(accountId: string): Account {
     const account = this.account(accountId);
-    if (!account.aiEnabled) throw new Error("Enable AI for this account after reviewing the Copilot data-sharing notice.");
+    if (!account.aiEnabled) throw new Error("Enable AI for this account after reviewing the AI data-sharing notice.");
     return account;
   }
   private requireMessageAi(message: Message): void {
     this.requireAi(message.accountId);
     if (!mailOriginAllowed(this.vault, message, true))
-      throw new Error("Enable AI on this email's authorized Gmail API source before sharing its content with Copilot.");
+      throw new Error("Enable AI on this email's authorized Gmail API source before sharing its content with your AI provider.");
   }
   private citationAllowedForAi(citation: Citation): boolean {
     const message = this.vault.get<Message>("messages", citation.messageId);
@@ -747,11 +762,41 @@ export class RelayService {
     this.host.changed();
     try { return await task(); } finally { this.aiBusy = false; this.host.changed(); }
   }
+  /** Switches the AI provider, remembering each provider's last model. Running requests finish on their provider. */
+  private async selectAiProvider(provider: AiProviderId): Promise<CommandResult> {
+    const settings = this.settings();
+    if (provider === settings.aiProvider) return { message: `${this.ai.active.name} is already selected.` };
+    const providerModels = { ...settings.providerModels, [settings.aiProvider]: settings.model };
+    const target = this.ai.providers[provider];
+    this.vault.put("settings", "preferences", { ...settings, aiProvider: provider, providerModels, model: providerModels[provider] ?? "" });
+    this.host.changed();
+    if (target.status.status !== "ready") await target.connect().catch(() => undefined);
+    // A remembered model that this account can no longer use must be chosen again explicitly.
+    const after = this.settings();
+    if (after.model && target.status.status === "ready" && !target.models.some(item => item.id === after.model))
+      this.vault.put("settings", "preferences", { ...after, model: "" });
+    this.host.changed();
+    return { message: target.status.status === "ready" ? `${target.name} selected. Choose a model.` : `${target.name} selected. ${target.status.message}` };
+  }
+  private async aiLogin(): Promise<CommandResult> {
+    const provider = this.ai.active;
+    if (provider.id === "claude") throw new Error("Claude uses your Anthropic API key. Paste it in Settings → AI & assistant.");
+    if (provider.id === "codex") {
+      if (!this.codex.executable) await this.codex.connect().catch(() => undefined);
+      const executable = this.codex.executable;
+      if (!executable) throw new Error("Codex CLI not found. Install it (npm install -g @openai/codex, or brew install --cask codex), then click Sign in again.");
+      if (!this.host.loginCodex) throw new Error("Run codex login in a terminal, then click Connect.");
+      await this.host.loginCodex(executable);
+      return { message: "Finish signing in with ChatGPT in the Codex window, then click Connect here." };
+    }
+    await this.host.loginCopilot();
+    return { message: "Use /login in the Copilot window, then click Connect here." };
+  }
   private async generateDraft(messageId: string, instruction = "", override?: string, verifiedContext?: BrowserDraftContext, localOnly = false): Promise<CommandResult> {
     const message = this.message(messageId);
     this.requireMessageAi(message);
     const model = override || this.settings().model;
-    if (!model) throw new Error("Connect Copilot and choose a model in Settings.");
+    if (!model) throw new Error("Connect your AI provider and choose a model in Settings.");
     return this.runJob("ai", `Draft: ${message.subject}`, async () => this.runAi(async () => {
       const related = (await this.retrieval.search(message.subject, message.accountId)).filter(citation => this.citationAllowedForAi(citation));
       const localCitations = [this.citation(message), ...related.filter(c => c.messageId !== message.id)];
@@ -782,7 +827,7 @@ export class RelayService {
       this.requireMessageAi(this.message(messageId));
       if (this.message(messageId).revision !== message.revision) throw new Error("The source changed while preparing context. Review it and generate again.");
       if (nativeTarget) this.account(nativeTarget.accountId);
-      const result = await this.copilot.generate(task, citations, model);
+      const result = await this.ai.generate(task, citations, model);
       if (!localCitations.every(citation => this.citationAllowedForAi(citation)))
         throw new Error("Draft evidence permissions changed during generation.");
       for (const source of chatRevisions) {
@@ -972,17 +1017,18 @@ export class RelayService {
       }
       case "assistant.workspace.choose": {
         if (!this.host.chooseFolder) throw new Error("Choosing folders requires the desktop application.");
-        const chosen = await this.host.chooseFolder("Choose the Copilot workspace folder", this.assistantWorkspace());
+        const chosen = await this.host.chooseFolder("Choose the assistant workspace folder", this.assistantWorkspace());
         if (!chosen) return { message: "Workspace folder unchanged." };
         if (!/^[A-Za-z]:\\/.test(chosen) || /^[A-Za-z]:\\?$/.test(chosen)) throw new Error("Choose a folder, not a drive root.");
         this.vault.put("settings", "preferences", { ...this.settings(), assistantWorkspaceDir: chosen });
         this.host.changed();
-        return { message: `Copilot workspace set to ${chosen}.` };
+        return { message: `Assistant workspace set to ${chosen}.` };
       }
       case "settings.update": {
         const previous = this.settings(), next = { ...previous, ...command.patch };
-        if (next.model && !this.copilot.models.some(m => m.id === next.model) && next.model !== previous.model)
-          throw new Error("Choose a currently available Copilot model.");
+        if (next.model && !this.ai.models.some(m => m.id === next.model) && next.model !== previous.model)
+          throw new Error(`Choose a currently available ${this.ai.active.name} model.`);
+        next.providerModels = { ...previous.providerModels, [next.aiProvider]: next.model };
         if (next.browserMailTransport !== previous.browserMailTransport) {
           this.documentAccessRevision++;
           this.mailArchive.permissionsChanged();
@@ -1005,8 +1051,18 @@ export class RelayService {
         this.host.changed();
         return { message: "Settings saved." };
       }
-      case "copilot.connect": await this.copilot.connect(); return { message: "Copilot connected. Choose an available model." };
-      case "copilot.login": await this.host.loginCopilot(); return { message: "Use /login in the Copilot window, then click Connect here." };
+      case "copilot.connect": await this.ai.connect(); return { message: `${this.ai.active.name} connected. Choose an available model.` };
+      case "copilot.login": return this.aiLogin();
+      case "ai.provider": return this.selectAiProvider(command.provider);
+      case "ai.claudeKey":
+        this.vault.put("secrets", CLAUDE_KEY_SECRET, { key: command.key });
+        this.claude.reset();
+        if (this.settings().aiProvider === "claude") await this.claude.connect().catch(() => undefined);
+        return { message: "Anthropic API key saved encrypted in your local archive." };
+      case "ai.claudeKey.clear":
+        this.vault.delete("secrets", CLAUDE_KEY_SECRET);
+        this.claude.reset();
+        return { message: "Anthropic API key removed." };
       case "draft.generate": return this.generateDraft(command.messageId, command.instruction, command.model);
       case "draft.handoff": {
         const draft = this.vault.get<Draft>("drafts", command.draftId);
@@ -1107,7 +1163,7 @@ export class RelayService {
           .filter(citation => this.citationAllowedForAi(citation));
         if (!citations.length) throw new Error("No eligible evidence found. Select sources, finish indexing and enable AI for the relevant account.");
         return this.runJob("ai", "Answer from your archive", async () => this.runAi(async () => {
-          const result = await this.copilot.generate(`Answer the user's question using only the supplied archive excerpts: ${command.query}`, citations, command.model || this.settings().model);
+          const result = await this.ai.generate(`Answer the user's question using only the supplied archive excerpts: ${command.query}`, citations, command.model || this.settings().model);
           for (const citation of citations) this.requireMessageAi(this.message(citation.messageId));
           if (!citations.every(citation => this.citationAllowedForAi(citation)))
             throw new Error("Answer evidence permissions changed during generation.");
@@ -1377,7 +1433,7 @@ export class RelayService {
     if (this.timer) clearInterval(this.timer);
     for (const controller of this.controllers.values()) controller.abort();
     this.attachmentController?.controller.abort();
-    await this.copilot.stop();
+    await this.ai.stop();
     await this.productivity.review.settled();
   }
 }

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readdir, stat } from "node:fs/promises";
 import { host } from "./platform";
-import type { PermissionRequest, Tool } from "@github/copilot-sdk";
+import type { AppTool as Tool, WorkspacePermissionRequest as PermissionRequest } from "./ai/agent";
 import { z } from "zod";
 import type { Account, Approval, Attachment, CalendarEvent, Citation, Collection, Command, CommandResult, Draft, Message, Settings, Snapshot, Source } from "../shared/contracts";
 import { CHAT_MESSAGE_MAX, CHAT_PROMPT_MAX, ChatLimitError, chatFileOpenable, ChatTimeoutError, skipsChatMailRefresh, type ChatAction, type ChatCommand, type ChatConversation, type ChatPermission, type ChatState, type ChatTurn } from "../shared/chat";
@@ -29,26 +29,26 @@ const empty = z.object({}).strict();
 export function chatFailureMessage(error: unknown): string {
   if (error instanceof ChatTimeoutError)
     return error.reason === "idle"
-      ? "Copilot stopped responding for three minutes. Retry this request or reconnect Copilot in Settings. No pending action was executed."
-      : "Copilot reached the ten-minute request deadline. No pending action was executed. Retry for a fresh overview or split a large review into smaller parts.";
-  if (error instanceof SyntaxError) return "Copilot returned invalid response JSON. Try a shorter request; no pending action was executed.";
-  if (error instanceof z.ZodError) return "Copilot returned an unsupported response format. Regenerate the response; no pending action was executed.";
+      ? "The AI provider stopped responding for three minutes. Retry this request or reconnect it in Settings. No pending action was executed."
+      : "The AI provider reached the ten-minute request deadline. No pending action was executed. Retry for a fresh overview or split a large review into smaller parts.";
+  if (error instanceof SyntaxError) return "The AI provider returned invalid response JSON. Try a shorter request; no pending action was executed.";
+  if (error instanceof z.ZodError) return "The AI provider returned an unsupported response format. Regenerate the response; no pending action was executed.";
   const message = error instanceof Error ? error.message : "";
   if (/Evidence changed|Source permissions changed|Evidence is no longer permitted/i.test(message))
-    return "Calendar or message evidence changed while Copilot was working. Please retry with the refreshed sources. No pending action was executed.";
+    return "Calendar or message evidence changed while the assistant was working. Please retry with the refreshed sources. No pending action was executed.";
   if (/cited evidence it did not read/i.test(message))
-    return "Copilot returned an unverified citation. Regenerate the response; no pending action was executed.";
+    return "The AI provider returned an unverified citation. Regenerate the response; no pending action was executed.";
   if (/Another .*running|already running|AI is busy/i.test(message))
     return "Another AI request is running. Wait for it to finish, then try again. No pending action was executed.";
   if (/budget|daily.*limit|quota/i.test(message))
     return "The AI request limit or subscription quota was reached. Review usage in Settings before retrying.";
-  if (/selected model is not available|Choose a Copilot model|No entitled/i.test(message))
-    return "The selected Copilot model is unavailable. Choose an entitled model; Relay Desk will not switch models automatically.";
+  if (/selected model is not available|Choose an? [A-Za-z ]+ model|No entitled|reported no available models/i.test(message))
+    return "The selected model is unavailable. Choose an entitled model; Relay Desk will not switch models automatically.";
   if (/timeout|timed out/i.test(message))
-    return "Copilot did not respond before the connection timed out. Retry this request or reconnect Copilot in Settings. No pending action was executed.";
+    return "The AI provider did not respond before the connection timed out. Retry this request or reconnect it in Settings. No pending action was executed.";
   if (/returned no answer/i.test(message))
-    return "Copilot returned no final answer. Retry this request; no pending action was executed.";
-  return "Copilot could not complete this request. Check the selected model, connection, AI budget and source permissions, or ask a narrower question. No pending action was executed.";
+    return "The AI provider returned no final answer. Retry this request; no pending action was executed.";
+  return "The AI provider could not complete this request. Check the selected model, connection, AI budget and source permissions, or ask a narrower question. No pending action was executed.";
 }
 // The installed SDK accepts JSON Schema or Zod 4; IPC uses Zod 3. Keep validation
 // in the IPC schemas and translate only the small set of shapes used by app tools.
@@ -390,7 +390,7 @@ export class ChatService {
     if (command.type !== "chat.send") throw new Error("Unsupported chat command.");
     if (!command.text.trim() || command.text.length > CHAT_MESSAGE_MAX) throw new Error(`Messages must contain 1–${CHAT_MESSAGE_MAX} characters. Nothing was truncated.`);
     const model = command.model || this.hooks.settings().model;
-    if (!model) throw new Error("Connect Copilot and select a model in Settings.");
+    if (!model) throw new Error("Connect your AI provider and select a model in Settings.");
     const conversation = command.conversationId ? this.state.conversations.find(c => c.id === command.conversationId) : this.newConversation();
     if (!conversation) throw new Error("Conversation not found.");
     if (conversation.turns.length >= 60) throw new Error("This conversation reached its 60-turn limit. Start a new chat.");
@@ -406,7 +406,7 @@ export class ChatService {
       guidance: "Previous messages are context, not current evidence. Always read the current local archive with tools for personal facts, even in an existing conversation. mailRefresh is the user's choice for THIS turn: local means no question-triggered refresh or download is permitted, including via refresh_inbox; answer from the newest already-imported messages. Do not claim a refresh failed when it was skipped, or ask again. download means the user approved fetching mail; resolve the permitted account via workspace_status before refreshing that scope. Attention and recent-message tools honor this choice. Browser Inbox previews are incomplete snippets, not full emails. Retain newer previews even when older full bodies exist; read_message can return older fullMessageIds for context but they do not replace a newer reply. Report actual download failures only when a download was approved and attempted. Only app confirmation result cards prove provider writes." });
     if (prompt.length > CHAT_PROMPT_MAX) throw new Error("Conversation exceeds the prompt limit. Start a new chat; no message was truncated.");
     const turn: StoredTurn = { id: randomUUID(), role: "assistant", text: "", createdAt: now(), model, status: "working",
-      mailRefresh, progress: "Connecting to Copilot…", citations: [], actions: [], evidence: [...new Map(conversation.turns.flatMap(t => t.evidence)
+      mailRefresh, progress: "Connecting to the AI provider…", citations: [], actions: [], evidence: [...new Map(conversation.turns.flatMap(t => t.evidence)
         .map(ref => [`${ref.collection}:${ref.id}`, ref])).values()]
         .map(ref => ({ ...ref, revision: undefined })) };
     // Shell/web approvals never carry over to a new request, which may read different (untrusted) content.
@@ -423,7 +423,7 @@ export class ChatService {
       if (this.active === active) this.active = undefined;
       this.redact(); this.persist();
     });
-    return { conversationId: conversation.id, message: "Copilot is working. You can cancel this chat request." };
+    return { conversationId: conversation.id, message: "The assistant is working. You can cancel this chat request." };
   }
   private newConversation(): StoredConversation {
     if (this.state.conversations.length >= 20) throw new Error("Delete an old conversation before creating more (20 maximum).");
@@ -455,7 +455,7 @@ export class ChatService {
           permission: request => this.permissionRequest(turn, conversationId, request, directory, approvedReads)
         } : undefined });
       this.guard(turn);
-      if (result.citationIds.some(id => !turn.citations.some(c => c.id === id))) throw new Error("Copilot cited evidence it did not read.");
+      if (result.citationIds.some(id => !turn.citations.some(c => c.id === id))) throw new Error("The AI provider cited evidence it did not read.");
       if (requiresFreshMail && !turn.mailFreshness?.length) {
         turn.text = "Latest emails were not verified: no permitted inbox refresh completed during this request. I cannot provide a current inbox assessment from the older conversation alone. Check the account's selected sources and AI access, then retry.";
         turn.status = "complete";
@@ -1001,7 +1001,7 @@ export class ChatService {
       signal.addEventListener("abort", abort, { once: true });
       this.pendingPermissions.set(permission.id, { turnId: turn.id, conversationId, kind, finish });
     });
-    if (turn.status === "working") turn.progress = decision === "approve" ? "Approved; Copilot is continuing…" : "Denied; Copilot is continuing without it…";
+    if (turn.status === "working") turn.progress = decision === "approve" ? "Approved; the assistant is continuing…" : "Denied; the assistant is continuing without it…";
     this.persist();
     return decision;
   }
@@ -1151,7 +1151,7 @@ export class ChatService {
     const guards = this.validateAction(command, turn);
     const review = this.review(command, turn);
     const description = command.type === "calendar.propose" ? "Creates a separate calendar approval, not a provider write. Afterwards ask chat to prepare its exact write preview, or review it in Calendar." :
-      command.type === "draft.generate" ? "Generates a local reply draft using Copilot. Afterwards ask chat for an exact native-save preview, or review it in Drafts. Never sends mail." :
+      command.type === "draft.generate" ? "Generates a local reply draft using the selected AI provider. Afterwards ask chat for an exact native-save preview, or review it in Drafts. Never sends mail." :
       command.type === "review.start" ? "Starts a bounded full-archive review using your AI budget. Pause or cancel it in AI review." :
       command.type === "draft.save" || command.type === "draft.handoff" ? "Saves exactly the reviewed recipients, subject and body as a native mailbox draft. Nothing is sent. Uncertain saves must be checked in the mailbox." :
       command.type === "calendar.approve" ? "Writes exactly this reviewed calendar change. Provider invitation/update notifications may be sent to every listed attendee." :

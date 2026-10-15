@@ -59,9 +59,14 @@ describe.skipIf(!process.env.RELAY_UI_BROWSER_TEST)("settings connections", () =
       await relayConfirm.getByRole("button", { name: "Remove", exact: true }).click();
       await browserExpect.poll(commands).toEqual([{ type: "gmailRelay.remove", sourceId: "relay-src", forget: true }]);
 
-      await page.getByRole("tab", { name: "Copilot & assistant", exact: true }).click();
+      await page.getByRole("tab", { name: "AI & assistant", exact: true }).click();
       await browserExpect(page.getByRole("combobox", { name: "Shell commands", exact: true })).toBeVisible();
       await browserExpect(mailboxCards).toHaveCount(0);
+      const providers = page.getByRole("radiogroup", { name: "AI provider" });
+      await browserExpect(providers.getByRole("radio")).toHaveCount(3);
+      await browserExpect(providers.getByRole("radio", { name: /GitHub Copilot/ })).toHaveAttribute("aria-checked", "true");
+      await providers.getByRole("radio", { name: /Claude \(Anthropic API\)/ }).click();
+      await browserExpect.poll(commands).toContainEqual({ type: "ai.provider", provider: "claude" });
     } finally { await page.close(); }
   }, 60_000);
 });

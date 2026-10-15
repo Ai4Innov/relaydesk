@@ -23,7 +23,7 @@ When you open Relay Desk, the chat screen shows a **Getting started** checklist.
 
 ## 1. Install the prerequisites
 
-You need three things on every platform: **Node.js 24** (`^24.13.0`), **Git**, and the **GitHub Copilot CLI** with an active Copilot subscription. You don't need an OpenAI, Anthropic or other AI API key.
+You need three things on every platform: **Node.js 24** (`^24.13.0`), **Git**, and **one AI provider**. The steps below use the **GitHub Copilot CLI** with an active Copilot subscription; to use OpenAI Codex or Claude instead, see [Choosing another AI provider](#choosing-another-ai-provider). You don't need an OpenAI, Anthropic or other AI API key.
 
 <details open>
 <summary><strong>Windows 10/11 (x64)</strong></summary>
@@ -77,6 +77,16 @@ The archive key is stored with the macOS Keychain through Electron `safeStorage`
    ```
 </details>
 
+### Choosing another AI provider
+
+Relay Desk works with three providers. Switch any time in **Settings → AI & assistant**; each remembers its own model.
+
+| Provider | Setup | Notes |
+| --- | --- | --- |
+| GitHub Copilot | `npm install -g @github/copilot`, run `copilot`, type `/login` | Default. No API key. |
+| OpenAI Codex | `npm install -g @openai/codex` (macOS also: `brew install --cask codex`), then `codex login` and sign in with ChatGPT | No API key. Uses your ChatGPT plan's Codex limits. Relay Desk finds `codex` on PATH and in common install folders; you can also set its full path in Settings. |
+| Claude | Create an API key in the [Anthropic Console](https://console.anthropic.com/) and paste it in Settings | Billed per token by Anthropic. Anthropic does not permit third-party apps to use Claude.ai subscription sign-in, so an API key is required. The key is stored encrypted on this device. |
+
 ## 2. Get and run Relay Desk
 
 ```bash
@@ -107,10 +117,10 @@ CI builds the same artifacts for all three platforms on every push to `main`.
 
 | Step | What to do | Where |
 | --- | --- | --- |
-| **Connect Copilot** | Click **Connect Copilot**. If it says you are not signed in, click **Sign in to Copilot**. A terminal opens with `copilot`; type `/login`. | Chat checklist, or Settings → Copilot & assistant |
+| **Connect your AI provider** | Click **Connect Copilot** (or Codex/Claude if you switched). If it says you are not signed in, click **Sign in**: a terminal opens with `copilot` (type `/login`) or `codex login`. For Claude, click **Add API key**. | Chat checklist, or Settings → Copilot & assistant |
 | **Choose a model** | Pick any model your subscription allows. You can change it later, even for a single question. | Checklist dropdown, or the model picker above the chat box |
 | **Connect an inbox** | The easiest route is the **browser companion**. It reads the Gmail and Calendar tabs you already have open, with no Google Cloud setup. Other options: the Apps Script relay, the Gmail API, Microsoft 365, Slack or WhatsApp Web. | Settings → Connections |
-| **Allow AI for chosen sources** | Turn on AI only for the accounts and sources you want Copilot to read. Everything else stays local. | Settings → Connections → each account |
+| **Allow AI for chosen sources** | Turn on AI only for the accounts and sources you want your AI provider to read. Everything else stays local. | Settings → Connections → each account |
 | **Ask** | Try *“What needs my attention today?”* Answers cite their sources, and every write appears as a card you confirm. | Chat |
 
 Want to look around first? On the **Connect an inbox** step, click **Explore a sample workspace** to load synthetic Gmail, Outlook, Slack and calendar data. It touches no real account.
@@ -143,7 +153,7 @@ flowchart LR
 ```
 
 - Your messages are stored **only on your computer**, encrypted with a key held by the OS keychain (Windows DPAPI, macOS Keychain, Linux Secret Service).
-- Copilot receives only excerpts from sources you have enabled for AI.
+- Your AI provider (GitHub, OpenAI or Anthropic) receives only excerpts from sources you have enabled for AI.
 - Relay Desk **never sends email or posts to Slack**. Drafts are saved to your mailbox only when you click Save, and calendar changes happen only after you approve the exact change.
 
 ## Where things live
@@ -163,6 +173,9 @@ Set `RELAY_DATA_DIR` to use a different data folder, for example a throwaway one
 | Symptom | Fix |
 | --- | --- |
 | *“Copilot is not signed in”* although the CLI works | Run `copilot` in a terminal and complete `/login`, then click **Connect Copilot** again. |
+| *“Codex is not signed in”* | Run `codex login` in a terminal (or click **Sign in**), finish the ChatGPT sign-in, then click **Connect**. |
+| *“Codex CLI not found”* | Install it with `npm install -g @openai/codex`, or set its full path in **Settings → AI & assistant**. |
+| *“Anthropic rejected the API key”* | Create a new key in the Anthropic Console and paste it in **Settings → AI & assistant**. |
 | No models listed | Your subscription or organization policy may not allow SDK access. Check the Copilot settings on github.com, then click **Refresh models**. |
 | Linux: *“secure storage unavailable”* at startup | Install and unlock GNOME Keyring or KWallet (see step 1), then restart Relay Desk. |
 | macOS: *“app is damaged and can’t be opened”* | This is quarantine on an unsigned build. Run the `xattr` command from the table above. |

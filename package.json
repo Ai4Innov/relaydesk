@@ -40,6 +40,7 @@
     "build": "vite build --config vite.renderer.config.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.134.0",
     "@github/copilot-sdk": "1.0.14",
     "@huggingface/transformers": "^3.8.1",
     "better-sqlite3-multiple-ciphers": "12.11.1",
@@ -70,6 +71,7 @@
     "@electron-forge/maker-zip": "7.11.2",
     "@electron-forge/plugin-vite": "7.11.2",
     "@electron-forge/shared-types": "7.11.2",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@playwright/test": "^1.58.0",
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.0",

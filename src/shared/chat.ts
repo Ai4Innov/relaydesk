@@ -16,7 +16,7 @@ export class ChatLimitError extends Error {
 }
 export class ChatTimeoutError extends Error {
   constructor(readonly reason: "idle" | "deadline") {
-    super(reason === "idle" ? "Copilot stopped responding for three minutes." : "Copilot reached the ten-minute request deadline.");
+    super(reason === "idle" ? "The AI provider stopped responding for three minutes." : "The AI provider reached the ten-minute request deadline.");
     this.name = "ChatTimeoutError";
   }
 }

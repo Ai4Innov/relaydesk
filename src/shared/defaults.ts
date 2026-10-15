@@ -1,6 +1,9 @@
 import type { Settings } from "./contracts";
 export const defaultSettings: Settings = {
   model: "",
+  aiProvider: "copilot",
+  providerModels: {},
+  codexPath: "",
   dailyAiLimit: 20,
   aiRunsToday: 0,
   aiUsageDate: new Date().toISOString().slice(0, 10),

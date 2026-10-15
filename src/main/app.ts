@@ -153,6 +153,10 @@ async function start(): Promise<void> {
       try { await openTerminal("copilot"); }
       catch { throw new Error("Install Copilot CLI (npm install -g @github/copilot), run copilot in a terminal and use /login, then reconnect here."); }
     },
+    loginCodex: async executable => {
+      try { await openTerminal(executable, host, undefined, ["login"]); }
+      catch { throw new Error("Run codex login in a terminal, then click Connect here."); }
+    },
     backupPath: async () => (await dialog.showSaveDialog({ title: "Save encrypted Relay Desk backup", defaultPath: "relay-desk.backup", filters: [{ name: "Encrypted backup", extensions: ["backup"] }] })).filePath,
     saveAttachmentPath: async name => {
       const options: Electron.SaveDialogOptions = {

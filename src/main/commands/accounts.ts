@@ -88,7 +88,7 @@ export async function accountCommand(ctx: CommandContext, command: AccountComman
       vault.put("accounts", account.id, { ...account, aiEnabled: command.enabled });
       ctx.chat.permissionsChanged();
       ctx.changed();
-      return { message: command.enabled ? "AI enabled for this account. Relevant excerpts may be sent to Copilot." : "AI disabled for this account." };
+      return { message: command.enabled ? "AI enabled for this account. Relevant excerpts may be sent to your selected AI provider." : "AI disabled for this account." };
     }
     case "source.select": {
       const source = vault.get<Source>("sources", command.sourceId);

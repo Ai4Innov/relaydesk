@@ -5,6 +5,7 @@ import { fileSize, formatDate, hostOS, OS_TEXT } from "./utils";
 import { BrowserSetup } from "./BrowserSetup";
 import { FullMailArchive } from "./FullMailArchive";
 import { RefreshControls } from "./RefreshControls";
+import { AI_PROVIDER_HELP, activeAi } from "./ai";
 
 type Run = (command: Command, success?: string, onError?: (text: string) => void) => Promise<CommandResult | undefined>;
 type Props = { data: Snapshot; run: Run; busy: boolean };
@@ -12,7 +13,7 @@ type Tab = "connections" | "assistant" | "data" | "advanced";
 type ApiProvider = Exclude<Provider, "whatsapp">;
 const providerNames: Record<Provider, string> = { gmail: "Google Workspace", microsoft: "Microsoft 365", slack: "Slack", whatsapp: "WhatsApp Web" };
 const tabs: { id: Tab; label: string }[] = [
-  { id: "connections", label: "Connections" }, { id: "assistant", label: "Copilot & assistant" },
+  { id: "connections", label: "Connections" }, { id: "assistant", label: "AI & assistant" },
   { id: "data", label: "Data & app" }, { id: "advanced", label: "Advanced" }
 ];
 
@@ -134,10 +135,10 @@ function Connections({ data, run, busy }: Props) {
             <div><strong>{group.label}</strong><p>{providerNames[group.provider]}{group.accounts.some(account => account.demo) ? " · synthetic" : ""}</p></div>
             <Badge tone={fullMessages ? "teal" : live.length ? "amber" : "rose"}>{fullMessages ? "Full messages" : live.length ? "Previews / loaded pages" : "Not connected"}</Badge>
           </div>
-          <div className="setting-row compact"><div><strong>Allow Copilot</strong><p>Share relevant excerpts from this mailbox's selected sources with Copilot.</p></div>
-            <Toggle label={`Allow Copilot for ${name}`} checked={aiOn} disabled={!aiAccounts.length || working(group.key)}
+          <div className="setting-row compact"><div><strong>Allow AI</strong><p>Share relevant excerpts from this mailbox's selected sources with your selected AI provider (now {AI_PROVIDER_HELP[activeAi(data).id].title}).</p></div>
+            <Toggle label={`Allow ${activeAi(data).name} for ${name}`} checked={aiOn} disabled={!aiAccounts.length || working(group.key)}
               onChange={enabled => void act(group.key, "ai", aiAccounts.filter(account => account.aiEnabled !== enabled)
-                .map(account => ({ type: "account.ai", accountId: account.id, enabled })), enabled ? "Copilot enabled for this mailbox." : "Copilot disabled for this mailbox.")}/></div>
+                .map(account => ({ type: "account.ai", accountId: account.id, enabled })), enabled ? "AI enabled for this mailbox." : "AI disabled for this mailbox.")}/></div>
           {group.accounts.filter(account => account.connection === "browser" && account.provider === "whatsapp").map(account =>
             <div className="setting-row compact" key={`consent:${account.id}`}><div><strong>Allow local capture</strong><p>Retain the loaded text of chats you select. AI sharing stays separate.</p></div>
               <Toggle label={`Allow local capture for ${account.name}`} checked={account.consent} disabled={busy || account.status !== "connected"}
@@ -312,25 +313,62 @@ function ApiForm({ data, run, busy }: Props) {
   </div>;
 }
 
-/* ---------------------------------------------------------------- Copilot & assistant */
+/* ---------------------------------------------------------------- AI provider & assistant */
+
+function AiProviderSection({ data, run, busy }: Props) {
+  const update = (patch: Partial<Settings>, message?: string) => void run({ type: "settings.update", patch }, message || "Settings saved.");
+  const { id: active, name } = activeAi(data);
+  const providers = data.ai?.providers ?? (["copilot", "claude", "codex"] as const).map(id => id === "copilot"
+    ? { id, name: "GitHub Copilot", auth: "subscription" as const, status: data.copilot.status, message: data.copilot.message, hasKey: undefined }
+    : { id, name: AI_PROVIDER_HELP[id].title, auth: id === "claude" ? "api-key" as const : "subscription" as const, status: "disconnected" as const, message: "", hasKey: undefined });
+  const info = providers.find(item => item.id === active);
+  const [claudeKey, setClaudeKey] = useState("");
+  const [codexPath, setCodexPath] = useState(data.settings.codexPath ?? "");
+  const help = AI_PROVIDER_HELP[active];
+  return <section className="card settings-section" aria-label="AI provider">
+    <div className="settings-heading"><div className="setting-icon"><Sparkles/></div><div><h2>AI provider</h2><p>Choose who powers chat, drafts and reports. Switch at any time; each provider remembers its own model.</p></div>
+      <Badge tone={data.copilot.status === "ready" ? "teal" : "amber"}>{data.copilot.status}</Badge></div>
+    <div className="provider-picker" role="radiogroup" aria-label="AI provider">
+      {providers.map(item => <button key={item.id} type="button" role="radio" aria-checked={item.id === active} disabled={busy}
+        className={`provider-option ${item.id === active ? "active" : ""}`}
+        onClick={() => item.id !== active && void run({ type: "ai.provider", provider: item.id })}>
+        <strong>{AI_PROVIDER_HELP[item.id].title}</strong>
+        <span className="caption">{item.auth === "api-key" ? (item.hasKey ? "Your API key · saved" : "Your API key") : "Subscription sign-in"} · {item.status}</span>
+      </button>)}
+    </div>
+    <p className="muted">{help.detail} {help.billing}</p>
+    {info?.message && <p className="muted" role="status">{info.message}</p>}
+    {active === "claude" && <form className="limit-form" onSubmit={event => { event.preventDefault(); if (claudeKey.trim()) void run({ type: "ai.claudeKey", key: claudeKey.trim() }).then(() => setClaudeKey("")); }}>
+      <label>Anthropic API key<input type="password" autoComplete="off" spellCheck={false} placeholder={info?.hasKey ? "Saved — paste a new key to replace it" : "sk-ant-…"}
+        value={claudeKey} onChange={event => setClaudeKey(event.target.value)} aria-label="Anthropic API key"/></label>
+      <button className="secondary" disabled={busy || !claudeKey.trim()} type="submit">Save key</button>
+      {info?.hasKey && <button type="button" className="secondary danger" disabled={busy} onClick={() => void run({ type: "ai.claudeKey.clear" })}><Trash2 size={15}/>Remove key</button>}
+    </form>}
+    {active === "codex" && <form className="limit-form" onSubmit={event => { event.preventDefault(); update({ codexPath: codexPath.trim() }, "Codex CLI path saved."); }}>
+      <label>Codex CLI path (optional)<input value={codexPath} spellCheck={false} placeholder="Found automatically on PATH" onChange={event => setCodexPath(event.target.value)} aria-label="Codex CLI path"/></label>
+      <button className="secondary" disabled={busy} type="submit">Save path</button>
+    </form>}
+    <div className="button-row wrap">
+      {active !== "claude" && <button disabled={busy} onClick={() => void run({ type: "copilot.login" }, `${name} sign-in requested.`)}>Sign in</button>}
+      <button className="secondary" disabled={busy} onClick={() => void run({ type: "copilot.connect" }, `${name} connection refreshed.`)}><RefreshCw size={15}/>{data.copilot.status === "ready" ? "Refresh models" : "Connect"}</button>
+      <label className="model-select"><Sparkles size={14}/><span className="sr-only">{name} model</span>
+        <select aria-label={`${name} model`} value={data.settings.model} disabled={!data.models.length} onChange={event => update({ model: event.target.value })}>
+          <option value="">{data.models.length ? "Choose a model" : "Connect for available models"}</option>
+          {data.models.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}
+        </select></label>
+    </div>
+  </section>;
+}
 
 function Assistant({ data, run, busy }: Props) {
   const update = (patch: Partial<Settings>, message?: string) => void run({ type: "settings.update", patch }, message || "Settings saved.");
   const [limits, setLimits] = useState({ dailyAiLimit: data.settings.dailyAiLimit, attachmentThresholdMb: data.settings.attachmentThresholdMb });
   const tools = data.settings.assistantTools;
+  const { name } = activeAi(data);
   return <>
-    <section className="card settings-section" aria-label="Copilot">
-      <div className="settings-heading"><div className="setting-icon"><Sparkles/></div><div><h2>Copilot</h2><p>Your GitHub Copilot subscription. No separate AI API key.</p></div><Badge tone={data.copilot.status === "ready" ? "teal" : "amber"}>{data.copilot.status}</Badge></div>
-      {data.copilot.message && <p className="muted">{data.copilot.message}</p>}
-      <div className="button-row wrap">
-        <button disabled={busy} onClick={() => void run({ type: "copilot.login" }, "Copilot sign-in requested.")}>Sign in</button>
-        <button className="secondary" disabled={busy} onClick={() => void run({ type: "copilot.connect" }, "Copilot connection refreshed.")}><RefreshCw size={15}/>Refresh models</button>
-        <label className="model-select"><Sparkles size={14}/><span className="sr-only">Copilot model</span>
-          <select aria-label="Copilot model" value={data.settings.model} disabled={!data.models.length} onChange={event => update({ model: event.target.value })}>
-            <option value="">{data.models.length ? "Choose a model" : "Connect for available models"}</option>
-            {data.models.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}
-          </select></label>
-      </div>
+    <AiProviderSection {...{ data, run, busy }}/>
+    <section className="card settings-section" aria-label="AI usage">
+      <div className="settings-heading"><div className="setting-icon"><RefreshCw/></div><div><h2>AI usage</h2><p>Background help and local limits apply to every provider.</p></div></div>
       <div className="setting-row compact"><div><strong>Background AI assistance</strong><p>Prioritize new messages and prepare local drafts for AI-enabled mailboxes.</p></div>
         <Toggle label="Background AI assistance" checked={data.settings.backgroundAi} disabled={busy} onChange={backgroundAi => update({ backgroundAi })}/></div>
       <form className="limit-form" onSubmit={event => { event.preventDefault(); update(limits); }}>
@@ -338,7 +376,7 @@ function Assistant({ data, run, busy }: Props) {
         <label>File approval threshold (MB)<input type="number" min={1} max={10000} required value={limits.attachmentThresholdMb} onChange={event => setLimits(value => ({ ...value, attachmentThresholdMb: Number(event.target.value) }))}/></label>
         <button className="secondary" disabled={busy} type="submit">Save limits</button>
       </form>
-      <p className="caption">{data.settings.aiRunsToday} app-initiated AI runs today (local counter, not your Copilot balance).</p>
+      <p className="caption">{data.settings.aiRunsToday} app-initiated AI runs today (local counter, not your {name} balance).</p>
     </section>
     <section className="card settings-section" aria-label="Assistant tools">
       <div className="settings-heading"><div className="setting-icon"><Wrench/></div><div><h2>Assistant tools</h2>

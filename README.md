@@ -2,9 +2,9 @@
 
 # Relay Desk
 
-**Your inbox, Slack and calendar in one calm place, with GitHub Copilot doing the heavy lifting.**
+**Your inbox, Slack and calendar in one calm place, with GitHub Copilot, Claude or OpenAI Codex doing the heavy lifting.**
 
-Local-first · Encrypted · No AI API key · Windows, macOS and Linux
+Local-first · Encrypted · Bring your own AI subscription · Windows, macOS and Linux
 
 [![CI](https://github.com/Ai4Innov/relaydesk/actions/workflows/ci.yml/badge.svg)](https://github.com/Ai4Innov/relaydesk/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
@@ -14,13 +14,13 @@ Local-first · Encrypted · No AI API key · Windows, macOS and Linux
 
 </div>
 
-Relay Desk is a desktop communications assistant built with Electron, React and TypeScript. It imports selected Gmail, Microsoft and Slack sources, keeps a searchable encrypted archive on your computer, and prepares responses using your signed-in GitHub Copilot subscription. It never sends anything on your behalf.
+Relay Desk is a desktop communications assistant built with Electron, React and TypeScript. It imports selected Gmail, Microsoft and Slack sources, keeps a searchable encrypted archive on your computer, and prepares responses with the AI provider you choose: your GitHub Copilot subscription, your ChatGPT plan through the Codex CLI, or Claude with your own Anthropic API key. It never sends anything on your behalf.
 
-> Relay Desk is an [Ai4Innov](https://github.com/Ai4Innov) open-source project, licensed under [Apache-2.0](LICENSE). It is an independent project and is **not affiliated with, endorsed by or sponsored by GitHub, Microsoft, Google, Slack or Meta**. You are responsible for complying with your employer's policies and each provider's terms, including the [GitHub Copilot terms](https://docs.github.com/en/site-policy/github-terms/github-terms-for-additional-products-and-features#github-copilot).
+> Relay Desk is an [Ai4Innov](https://github.com/Ai4Innov) open-source project, licensed under [Apache-2.0](LICENSE). It is an independent project and is **not affiliated with, endorsed by or sponsored by GitHub, Microsoft, Google, Slack, Meta, Anthropic or OpenAI**. You are responsible for complying with your employer's policies and each provider's terms, including the [GitHub Copilot terms](https://docs.github.com/en/site-policy/github-terms/github-terms-for-additional-products-and-features#github-copilot), [Anthropic's terms](https://www.anthropic.com/legal/commercial-terms) and [OpenAI's terms](https://openai.com/policies/).
 
 ## Highlights
 
-- **No AI-provider API key.** Generation uses the official [`@github/copilot-sdk`](https://github.com/github/copilot-sdk) with your signed-in Copilot subscription. Pick any entitled model per message.
+- **Your AI, your choice.** Switch between **GitHub Copilot** (your subscription, no API key), **OpenAI Codex** (your ChatGPT plan via `codex login`, no API key) and **Claude** (your own Anthropic API key) at any time, and pick any model available to you per message. See [AI providers](#ai-providers).
 - **One inbox for many channels.** Gmail (Apps Script relay, Gmail API, browser companion or Playwright fallback), Microsoft 365, Slack, WhatsApp Web and Google/Microsoft calendars.
 - **Chat agent with reviewed actions.** It finds what needs attention, cites evidence, drafts replies, creates tasks and reports, and writes DOCX/XLSX/PPTX files. Every write is an action card you confirm, and Relay Desk never sends email.
 - **Local-first and encrypted.** The archive uses SQLCipher, encrypted attachments and an OS-protected key (DPAPI, Keychain or Secret Service), with local keyword and optional semantic (RAG) search.
@@ -30,7 +30,7 @@ Relay Desk is a desktop communications assistant built with Electron, React and 
 
 **New here? Follow the illustrated [Getting started guide](docs/getting-started.md).** It walks through Windows, macOS and Linux step by step.
 
-You need [Node.js 24](https://nodejs.org/) (`^24.13.0`), Git and the [GitHub Copilot CLI](https://github.com/github/copilot-cli) with a Copilot subscription.
+You need [Node.js 24](https://nodejs.org/) (`^24.13.0`), Git and **one** AI provider: the [GitHub Copilot CLI](https://github.com/github/copilot-cli) with a Copilot subscription (shown below), the [Codex CLI](https://github.com/openai/codex) with a ChatGPT plan, or an [Anthropic API key](https://console.anthropic.com/) for Claude.
 
 ```bash
 npm install -g @github/copilot
@@ -42,7 +42,7 @@ npm run doctor     # checks native prerequisites for your OS
 npm start          # launches the desktop app
 ```
 
-The chat screen opens with a **Getting started** checklist. Each step ticks itself off as you complete it: connect Copilot, choose a model, connect an inbox, choose what AI may read, then ask your first question. To look around first, load the **sample workspace**. It is fully synthetic and touches no account.
+The chat screen opens with a **Getting started** checklist. Each step ticks itself off as you complete it: connect your AI provider, choose a model, connect an inbox, choose what AI may read, then ask your first question. To look around first, load the **sample workspace**. It is fully synthetic and touches no account.
 
 | Platform | Status | Archive key protected by | `npm run make` output |
 | --- | --- | --- | --- |
@@ -56,7 +56,7 @@ The chat screen opens with a **Getting started** checklist. Each step ticks itse
 | --- | --- |
 | ![Getting-started checklist](docs/images/01-welcome.png) **Guided setup** in the chat | ![Today](docs/images/02-today.png) **Today:** your next moves, ranked, with reasons |
 | ![Unified inbox](docs/images/03-inbox.png) **Unified inbox** across accounts | ![Tasks](docs/images/04-tasks.png) **Tasks and focus reports** from your messages |
-| ![Calendar](docs/images/05-calendar.png) **Calendar** with overlap detection | ![Settings](docs/images/06-settings.png) **Pick any Copilot model** and control AI access |
+| ![Calendar](docs/images/05-calendar.png) **Calendar** with overlap detection | ![Settings](docs/images/06-settings.png) **Choose Copilot, Codex or Claude**, any model, and control AI access |
 
 ## How it works
 
@@ -64,10 +64,24 @@ The chat screen opens with a **Getting started** checklist. Each step ticks itse
 flowchart LR
     P["Gmail · Outlook · Slack<br/>WhatsApp · Calendars"] -->|"connectors /<br/>browser companion"| A[("Encrypted local archive")]
     A --> S["Local search<br/>keyword + optional RAG"]
-    S -->|"excerpts from AI-enabled<br/>sources only"| C["GitHub Copilot<br/>your subscription, any model"]
+    S -->|"excerpts from AI-enabled<br/>sources only"| C["Your AI provider<br/>Copilot · Codex · Claude"]
     C -->|"answers, drafts,<br/>action cards"| U["Relay Desk UI"]
     U -->|"you confirm"| W["Save draft · create event<br/>never sends"]
 ```
+
+## AI providers
+
+Pick the provider in **Settings → AI & assistant**. Each provider remembers its own model, and you can switch at any time; a request already running finishes on the provider it started with.
+
+| Provider | Sign-in | What you need | Billing |
+| --- | --- | --- | --- |
+| **GitHub Copilot** (default) | Copilot CLI login, no API key | `npm install -g @github/copilot`, then `copilot` and `/login` | Your Copilot plan |
+| **OpenAI Codex** | Codex CLI login with ChatGPT, no API key | `npm install -g @openai/codex` (or `brew install --cask codex`), then `codex login` | Your ChatGPT plan's Codex limits |
+| **Claude** | Your Anthropic API key | A key from the [Anthropic Console](https://console.anthropic.com/), pasted into Settings | Per token, to your Anthropic account |
+
+- **Why Claude needs an API key:** Anthropic does not allow third-party apps to offer Claude.ai subscription sign-in, so Relay Desk uses the Anthropic Messages API with your key. The key is stored encrypted in your local archive, is never shown again, and can be removed at any time. Relay Desk is not Claude Code and is not affiliated with Anthropic.
+- **How Codex runs:** Relay Desk finds your installed Codex CLI (PATH and common install folders, or a path you set) and runs `codex exec` for each request using your own `codex login`. Each run is ephemeral, ignores your Codex config, rules and history, has Codex's own shell, web search and plugins disabled, runs in a read-only sandbox in an empty scratch folder, and has `OPENAI_API_KEY` removed from its environment. Relay Desk's tools reach Codex through a loopback-only MCP server protected by a per-request token.
+- **Same tools, same approvals everywhere:** every provider gets the same app tools (search, read messages, tasks, calendars, action cards). When the assistant workspace is enabled, Claude and Codex get Relay Desk's own file, document, shell and web tools, and shell commands, web fetches and reads outside the workspace still ask you first.
 
 ## Repository layout
 
@@ -90,7 +104,7 @@ Relay Desk is licensed under the [Apache License 2.0](LICENSE). Third-party noti
 
 ## Chat-first workspace
 
-Relay Desk opens into **Chat**. Ask Copilot to find important messages, explain your schedule, prepare replies, create or update tasks, generate a focus report, or refresh your inboxes. The agent uses scoped Relay Desk tools to work with your authorized sources, rather than just answering from a fixed prompt. Choose an entitled model directly in the composer; each response records the model actually used.
+Relay Desk opens into **Chat**. Ask the assistant to find important messages, explain your schedule, prepare replies, create or update tasks, generate a focus report, or refresh your inboxes. The agent uses scoped Relay Desk tools to work with your authorized sources, rather than just answering from a fixed prompt. Choose an entitled model directly in the composer; each response records the model actually used.
 
 Attention summaries start with a bounded, account-balanced shortlist of permitted email excerpts, with citations and explicit coverage limits, rather than paging through the entire archive. Chat progress distinguishes working through evidence from writing the answer. Active responses may continue beyond three minutes; three minutes without meaningful activity or the ten-minute overall response deadline stops the request. Cancellation and confirmation requirements still apply.
 
@@ -108,7 +122,7 @@ Attachment rows and Chat document citations open the internal viewer: PDF pages 
 
 Changes appear as exact action previews. Click **Confirm action** to execute one; a model proposal alone never writes anything. Native draft saves show recipients and complete text, and calendar writes show their exact event details and notification effects. Replies are never sent. Browser-only accounts still need an authorized API connection for native writes, and chatting never enables AI sharing for an excluded account.
 
-Chat uses the existing Copilot subscription and local AI budget, not a separate API key. A previously selected subscription reconnects automatically when Chat opens; sign-in or entitlement failures remain visible without a retry loop or fallback model. Final answers appear when the agent finishes; progress is live but answer text is not token-streamed. See [chat capabilities, approvals and limits](docs/chat-agent.md).
+Chat uses the selected AI provider (Copilot or Codex sign-in, or your Claude API key) and the local AI budget. A previously selected provider reconnects automatically when Chat opens; sign-in or entitlement failures remain visible without a retry loop or fallback model. Final answers appear when the agent finishes; progress is live but answer text is not token-streamed. See [chat capabilities, approvals and limits](docs/chat-agent.md).
 
 Chat offers **Yes / No** before downloading latest messages for an answer.
 **No** uses the newest messages already in the local archive; explicit "no need to
@@ -121,7 +135,7 @@ account/source permissions and provider-write approvals remain unchanged.
 
 ### Assistant tools (files, documents, shell, web)
 
-Chat can also act like a native Copilot agent: it can read and write files in its
+Chat can also act like a native coding agent (with any provider): it can read and write files in its
 workspace folder (default `Documents\Relay Desk`), create real **Word (.docx), Excel
 (.xlsx) and PowerPoint (.pptx)** files, run PowerShell commands and fetch web pages.
 Created files appear as cards with **Open** and **Show in folder**; **Open** is only offered
@@ -129,12 +143,12 @@ for passive document/image formats, so a script-like file (for example `.hta` or
 can only be shown in its folder, never launched from the app. Reads outside the
 workspace, every shell command and every web request show an approval card first
 (**Allow once**, **Allow for this response** for shell/web, or **Deny**). Configure the
-workspace folder and shell/web policy (ask / off) in **Settings → Copilot & assistant**.
+workspace folder and shell/web policy (ask / off) in **Settings → AI & assistant**.
 Email content never triggers these tools on its own, and Relay Desk never sends email.
 
 ### Settings and connection priority
 
-Settings has four tabs: **Connections**, **Copilot & assistant**, **Data & app** and
+Settings has four tabs: **Connections**, **AI & assistant**, **Data & app** and
 **Advanced**. Connections shows one card per mailbox listing each of its connection
 methods. Each method has its own **Remove** button, and **Remove mailbox** removes all of
 them. Removing keeps local copies (excluded from AI) unless you tick **Also delete local
@@ -237,7 +251,7 @@ Choose **Schedule** on a task, review its calendar, time zone, start/end and rem
 - Slack replies are copy/paste only; the app does not post to Slack.
 - Calendar writes require an exact preview and a single-use approval. Attendees may receive invitations or updates. There is no event-delete or meeting-response automation.
 - Archiving means making a local copy, not moving, deleting or marking provider messages as archived.
-- AI requires separate account consent. Relevant excerpts then leave your computer for Copilot; local-first does **not** mean offline AI.
+- AI requires separate account consent. Relevant excerpts then leave your computer for your selected AI provider (GitHub, OpenAI or Anthropic); local-first does **not** mean offline AI.
 - Selected sources and provider permissions limit history. Deleted/expired/unavailable history cannot be recovered. No connector can bypass workplace retention rules.
 
 Read [privacy and permissions](docs/privacy-and-permissions.md) before connecting workplace accounts. The [provider registration guide](docs/provider-setup.md) covers Gmail API setup; the [browser setup guide](docs/browser-mode.md) covers the companion and browser-only channels.
@@ -250,7 +264,7 @@ Step-by-step, illustrated instructions for each OS are in [Getting started](docs
 - **macOS:** Node.js 24 and the Xcode command-line tools (`xcode-select --install`). The archive key lives in the Keychain.
 - **Linux:** Node.js 24, `build-essential`/`python3` (for native-module fallbacks) and a running Secret Service keyring such as GNOME Keyring or KWallet. Without a keyring, Relay Desk refuses to start rather than storing the key in plaintext. The tray icon needs AppIndicator support on GNOME.
 
-The assistant's optional shell tool uses PowerShell on Windows and bash on macOS/Linux. **Sign in to Copilot** opens Windows Terminal/cmd, macOS Terminal or the first available Linux terminal emulator (`x-terminal-emulator`, GNOME Terminal, Konsole, Xfce Terminal, kitty, Alacritty or xterm).
+The assistant's optional shell tool uses PowerShell on Windows and bash on macOS/Linux. **Sign in** (Copilot or Codex) opens Windows Terminal/cmd, macOS Terminal or the first available Linux terminal emulator (`x-terminal-emulator`, GNOME Terminal, Konsole, Xfce Terminal, kitty, Alacritty or xterm).
 
 Then, in a terminal in this project:
 

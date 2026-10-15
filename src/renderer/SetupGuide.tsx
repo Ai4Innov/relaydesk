@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ArrowRight, Check, Inbox, KeyRound, ListChecks, MessageSquare, Sparkles, X } from "lucide-react";
 import type { Command, CommandResult, Snapshot } from "../shared/contracts";
 import { hostOS, OS_TEXT } from "./utils";
+import { activeAi } from "./ai";
 
 type Run = (command: Command, success?: string) => Promise<CommandResult | undefined>;
 const DISMISSED = "relay.setupGuide.dismissed";
@@ -13,14 +14,19 @@ export function setupSteps(data: Snapshot): SetupStep[] {
   const real = data.accounts.filter(account => !account.demo);
   const selected = (accountId: string) => data.sources.some(source => source.accountId === accountId && source.selected);
   const os = OS_TEXT[hostOS()].name;
+  const ai = activeAi(data);
+  const connect = {
+    copilot: { title: "Connect your Copilot subscription", detail: `No API key. Install Copilot CLI, run copilot and /login once on this ${os} account, then connect. Prefer Claude or Codex? Switch in Settings → AI & assistant.` },
+    claude: { title: "Add your Anthropic API key", detail: "Claude needs your own Anthropic API key (billed by Anthropic). Paste it in Settings → AI & assistant, then connect." },
+    codex: { title: "Connect your Codex sign-in", detail: `No API key. Install the Codex CLI, run codex login once on this ${os} account with your ChatGPT plan, then connect.` }
+  }[ai.id];
   return [
-    { id: "copilot", title: "Connect your Copilot subscription", done: data.copilot.status === "ready",
-      detail: `No API key. Install Copilot CLI, run copilot and /login once on this ${os} account, then connect.` },
+    { id: "copilot", title: connect.title, done: data.copilot.status === "ready", detail: connect.detail },
     { id: "model", title: "Choose a model", done: !!data.settings.model && data.models.some(model => model.id === data.settings.model),
       detail: "You can switch models at any time, even per question." },
     { id: "inbox", title: "Connect an inbox", done: real.some(account => selected(account.id)),
       detail: "Fastest: the browser companion uses Gmail tabs you already have open. Gmail API, Apps Script relay, Outlook and Slack are optional." },
-    { id: "consent", title: "Let Copilot read the sources you choose", done: real.some(account => account.aiEnabled && selected(account.id)),
+    { id: "consent", title: `Let ${ai.name} read the sources you choose`, done: real.some(account => account.aiEnabled && selected(account.id)),
       detail: "AI access is opt-in per account. Nothing is sent; replies stay drafts." },
     { id: "ask", title: "Ask your first question", done: (data.chat?.conversations ?? []).some(conversation => conversation.turns.length > 0),
       detail: "Try “What needs my attention today?”" }
@@ -42,15 +48,18 @@ export function SetupGuide({ data, guide, run, openSettings, ask }: { data: Snap
   const complete = steps.filter(step => step.done).length;
   const next = steps.find(step => !step.done)!;
   const busy = data.copilot.status === "connecting";
+  const ai = activeAi(data);
   const action = (step: SetupStep) => {
     switch (step.id) {
       case "copilot": return <div className="button-row wrap">
-        <button className="small" disabled={busy} onClick={() => void run({ type: "copilot.connect" })}><Sparkles size={14}/>{busy ? "Connecting…" : "Connect Copilot"}</button>
-                <button className="small secondary" disabled={busy} onClick={() => void run({ type: "copilot.login" })}><KeyRound size={14}/>Sign in to Copilot</button></div>;
-      case "model": return <label className="model-select"><span className="sr-only">Choose a Copilot model</span>
-        <select aria-label="Choose a Copilot model" value={data.settings.model} disabled={!data.models.length}
+        <button className="small" disabled={busy} onClick={() => void run({ type: "copilot.connect" })}><Sparkles size={14}/>{busy ? "Connecting…" : `Connect ${ai.name}`}</button>
+        {ai.id === "claude"
+          ? <button className="small secondary" onClick={openSettings}><KeyRound size={14}/>Add API key</button>
+          : <button className="small secondary" disabled={busy} onClick={() => void run({ type: "copilot.login" })}><KeyRound size={14}/>Sign in to {ai.name}</button>}</div>;
+      case "model": return <label className="model-select"><span className="sr-only">Choose a {ai.name} model</span>
+        <select aria-label={`Choose a ${ai.name} model`} value={data.settings.model} disabled={!data.models.length}
           onChange={event => void run({ type: "settings.update", patch: { model: event.target.value } }, "Model selected.")}>
-          <option value="">{data.models.length ? "Choose a model" : "Connect Copilot first"}</option>
+          <option value="">{data.models.length ? "Choose a model" : `Connect ${ai.name} first`}</option>
           {data.models.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}
         </select></label>;
       case "inbox": case "consent": return <div className="button-row wrap">

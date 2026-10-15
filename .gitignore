@@ -45,7 +45,7 @@ Gmail-export_*/
 Relay Desk/
 
 # Personal working copies (scripts configured with private IDs)
-ai/
+/ai/
 
 # Editor/OS noise
 .vscode/

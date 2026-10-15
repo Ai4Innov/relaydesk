@@ -2,7 +2,7 @@
 
 ## Before connecting an account
 
-Confirm you are authorized to retain communications locally and, separately, to disclose selected content to GitHub Copilot. Employer, tenant, workspace, provider and Copilot organization policies apply. Personal use or a small number of users does not automatically waive Google restricted-scope verification, Limited Use, Slack policies or workplace governance.
+Confirm you are authorized to retain communications locally and, separately, to disclose selected content to your selected AI provider (GitHub Copilot, OpenAI Codex or Anthropic Claude). Employer, tenant, workspace, provider and Copilot organization policies apply. Personal use or a small number of users does not automatically waive Google restricted-scope verification, Limited Use, Slack policies or workplace governance.
 
 The application ships no Google/Microsoft registration, Slack workspace app, credentials or Copilot entitlement. Provider setup and administrator approval are external prerequisites. If approval is unavailable, leave that connector or its AI use disabled.
 
@@ -15,7 +15,7 @@ Follow the [provider setup guide](provider-setup.md) for registration, redirect 
 | Selected account history and attachment metadata | Local encrypted archive, obtained through authorized provider APIs or selected, loaded browser pages. Browser capture is not full-history access. |
 | Downloaded attachment originals | Local authenticated encrypted blobs, from provider downloads, automatic native Gmail downloads, or explicitly imported copies; size and processing approval gates apply. Browser Gmail downloads temporarily create a plaintext file in a request-specific RelayDesk subfolder under Windows Downloads before verified encrypted import and cleanup. User-imported/exported copies are not deleted and retain normal local-file privacy protections. |
 | Extracted text, full-text index and embeddings | Local encrypted database. Processing uses local parsers/models. |
-| Relevant excerpts for an AI draft/question | GitHub Copilot service after account AI opt-in; not the entire archive by default. Citations can include attachment text. |
+| Relevant excerpts for an AI draft/question | The selected AI provider (GitHub Copilot, OpenAI via your Codex CLI sign-in, or the Anthropic API) after account AI opt-in; not the entire archive by default. Citations can include attachment text. |
 | Native email draft | Gmail/Outlook only after an explicit Save draft action. |
 | Calendar change | Selected provider calendar after exact approval; invitations/updates can notify attendees. |
 | Slack response | Local draft and, on request, the system clipboard. Posting is done by the user outside Relay Desk. |
@@ -27,7 +27,14 @@ Follow the [provider setup guide](provider-setup.md) for registration, redirect 
 
 Clipboard contents are outside the encrypted archive and can be visible to clipboard history or other applications. Provider links open the default browser, where browser/provider privacy rules apply. Desktop notifications use generic wording instead of message bodies.
 
-Copilot usage, retention, entitlement and organization policy depend on your actual subscription and settings. This project does not promise zero remote retention or unlimited model access. The local attempted-run budget is an additional control, not a billing guarantee.
+AI usage, retention, entitlement and organization policy depend on your actual Copilot, ChatGPT or Anthropic account and settings. This project does not promise zero remote retention or unlimited model access. The local attempted-run budget is an additional control, not a billing guarantee.
+
+## AI providers
+
+- **GitHub Copilot** uses the Copilot CLI sign-in through the official SDK, in an isolated in-memory session with built-in tools disabled.
+- **OpenAI Codex** uses your installed Codex CLI and its own `codex login`. Relay Desk removes `OPENAI_API_KEY`/`CODEX_API_KEY` from its environment, and runs each request with `--ephemeral` (no session files), `--ignore-user-config`, `--ignore-rules`, a read-only sandbox in an empty scratch folder, and Codex's shell, web search, plugins, apps, memories and image tools disabled. Relay Desk's tools are exposed only through a 127.0.0.1 MCP endpoint that requires a random per-request bearer token and rejects browser origins.
+- **Claude** uses the Anthropic Messages API with your API key. The key is stored in the encrypted archive, never returned to the UI, and only sent to `api.anthropic.com`; ambient `ANTHROPIC_*` environment variables are ignored.
+- Account AI consent applies to whichever provider is selected. Switching provider changes which company receives future excerpts; review that provider's data-use terms first.
 
 ## Provider scopes are broader than app actions
 

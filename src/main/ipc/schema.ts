@@ -24,6 +24,7 @@ const eventChange = z.object({
 }).strict();
 const settingsPatch = z.object({
   model: z.string().max(200).optional(),
+  codexPath: z.string().max(1000).refine(value => value === "" || absoluteFolder(value), `Use an absolute ${host.name} path to the Codex CLI.`).optional(),
   dailyAiLimit: z.number().int().min(1).max(1000).optional(),
   backgroundAi: z.boolean().optional(),
   syncPaused: z.boolean().optional(),
@@ -99,6 +100,9 @@ export const commandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("settings.update"), patch: settingsPatch }).strict(),
   z.object({ type: z.literal("copilot.connect") }).strict(),
   z.object({ type: z.literal("copilot.login") }).strict(),
+  z.object({ type: z.literal("ai.provider"), provider: z.enum(["copilot", "claude", "codex"]) }).strict(),
+  z.object({ type: z.literal("ai.claudeKey"), key: z.string().trim().regex(/^sk-ant-[A-Za-z0-9_-]{20,300}$/, "Paste an Anthropic API key (starts with sk-ant-).") }).strict(),
+  z.object({ type: z.literal("ai.claudeKey.clear") }).strict(),
   z.object({ type: z.literal("draft.generate"), messageId: id, instruction: z.string().max(4000).optional(), model: z.string().max(200).optional() }).strict(),
   z.object({ type: z.literal("draft.edit"), draftId: id, body: text, recipients: z.array(address).max(100), subject: z.string().max(2000) }).strict(),
   z.object({ type: z.literal("draft.save"), draftId: id }).strict(),

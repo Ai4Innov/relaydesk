@@ -53,11 +53,11 @@ export function absoluteFolder(value: string, profile: PlatformProfile = host): 
 
 export interface TerminalLaunch { command: string; args: string[] }
 
-/** Opens a visible terminal running `program`, trying each launcher until one starts. */
+/** Opens a visible terminal running `program` (a PATH name or absolute executable) with simple arguments, trying each launcher until one starts. */
 export async function openTerminal(program: string, profile: PlatformProfile = host,
-  spawner: typeof spawn = spawn): Promise<void> {
+  spawner: typeof spawn = spawn, args: string[] = []): Promise<void> {
   let last: unknown;
-  for (const launcher of terminalLaunchers(program, profile)) {
+  for (const launcher of terminalLaunchers(program, profile, args)) {
     try {
       await new Promise<void>((resolve, reject) => {
         const child = spawner(launcher.command, launcher.args, { windowsHide: false, stdio: "ignore", detached: profile.id === "linux" });
@@ -73,17 +73,23 @@ export async function openTerminal(program: string, profile: PlatformProfile = h
 }
 
 /** Ways to open a visible terminal that runs `program`, in preference order. */
-export function terminalLaunchers(program: string, profile: PlatformProfile = host): TerminalLaunch[] {
-  if (!/^[A-Za-z0-9._-]+$/.test(program)) throw new Error("Unsupported terminal program.");
-  if (profile.id === "win32") return [{ command: "cmd.exe", args: ["/c", "start", '""', program] }];
-  if (profile.id === "darwin") return [{ command: "osascript", args: ["-e", `tell application "Terminal" to do script "${program}"`, "-e", 'tell application "Terminal" to activate'] }];
+export function terminalLaunchers(program: string, profile: PlatformProfile = host, args: string[] = []): TerminalLaunch[] {
+  const simple = /^[A-Za-z0-9._-]+$/;
+  // Absolute paths may contain spaces but never quoting or shell metacharacters.
+  const absolute = profile.path.isAbsolute(program) && !/["'`$;&|<>%!^\r\n\0]/.test(program);
+  if (!(simple.test(program) || absolute) || !args.every(arg => simple.test(arg))) throw new Error("Unsupported terminal program.");
+  if (profile.id === "win32") return [{ command: "cmd.exe", args: ["/c", "start", '""', program, ...args] }];
+  if (profile.id === "darwin") {
+    const line = [program.includes(" ") ? `'${program}'` : program, ...args].join(" ");
+    return [{ command: "osascript", args: ["-e", `tell application "Terminal" to do script "${line}"`, "-e", 'tell application "Terminal" to activate'] }];
+  }
   return [
-    { command: "x-terminal-emulator", args: ["-e", program] },
-    { command: "gnome-terminal", args: ["--", program] },
-    { command: "konsole", args: ["-e", program] },
-    { command: "xfce4-terminal", args: ["-e", program] },
-    { command: "kitty", args: [program] },
-    { command: "alacritty", args: ["-e", program] },
-    { command: "xterm", args: ["-e", program] }
+    { command: "x-terminal-emulator", args: ["-e", program, ...args] },
+    { command: "gnome-terminal", args: ["--", program, ...args] },
+    { command: "konsole", args: ["-e", program, ...args] },
+    { command: "xfce4-terminal", args: ["-x", program, ...args] },
+    { command: "kitty", args: [program, ...args] },
+    { command: "alacritty", args: ["-e", program, ...args] },
+    { command: "xterm", args: ["-e", program, ...args] }
   ];
 }

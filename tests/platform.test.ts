@@ -71,6 +71,11 @@ describe("terminal launch for Copilot sign-in", () => {
     expect(terminalLaunchers("copilot", mac)[0]).toMatchObject({ command: "osascript" });
     expect(terminalLaunchers("copilot", linux).map(item => item.command)).toContain("gnome-terminal");
     expect(() => terminalLaunchers("copilot; rm -rf ~", linux)).toThrow();
+    expect(terminalLaunchers("C:\\Program Files\\codex\\codex.exe", windows, ["login"])[0].args).toEqual(["/c", "start", '""', "C:\\Program Files\\codex\\codex.exe", "login"]);
+    expect(terminalLaunchers("/usr/local/bin/codex", linux, ["login"])[0].args).toEqual(["-e", "/usr/local/bin/codex", "login"]);
+    expect(() => terminalLaunchers("C:\\x\\codex.exe & calc", windows, ["login"])).toThrow();
+    expect(() => terminalLaunchers("/usr/bin/codex", mac, ["login; rm"])).toThrow();
+    expect(() => terminalLaunchers("relative/codex", linux, ["login"])).toThrow();
   });
 
   function fakeSpawn(behaviour: Record<string, "missing" | "spawn" | "exit0" | "exit1">) {
