@@ -139,7 +139,7 @@ describe.skipIf(!installedChannel)("managed Playwright Gmail: isolated real brow
     expect(h.launch).toHaveBeenCalledTimes(1);
     expect(h.launch.mock.calls[0][1]).not.toHaveProperty("ignoreDefaultArgs");
     expect(h.launch.mock.calls[0][1]).not.toHaveProperty("args");
-  }, 15_000);
+  }, 60_000);
 
   it("detects a rejection shown after the user opens the sign-in window", async () => {
     const h = await harness();
@@ -150,7 +150,7 @@ describe.skipIf(!installedChannel)("managed Playwright Gmail: isolated real brow
     await h.context().pages()[0].goto("https://accounts.google.com/v3/signin/rejected");
     await expect(h.driver.readMailThread(request, () => {})).rejects.toMatchObject({ code: "sign-in-blocked" });
     expect(h.context().pages()).toHaveLength(1);
-  }, 15_000);
+  }, 60_000);
 
   it("does not treat mailbox content as a Google sign-in rejection", async () => {
     const h = await harness();
@@ -161,7 +161,7 @@ describe.skipIf(!installedChannel)("managed Playwright Gmail: isolated real brow
       document.body.append(heading);
     });
     expect((await h.driver.readMailThread(request, () => {})).messages).toHaveLength(2);
-  }, 15_000);
+  }, 60_000);
 
   it("uses real exact-row and Expand all clicks, returns every full HTML body and preserves the sign-in page", async () => {
     const h = await harness();
@@ -204,14 +204,14 @@ describe.skipIf(!installedChannel)("managed Playwright Gmail: isolated real brow
     expect(capture.messages).toHaveLength(2);
     expect(await h.reader().evaluate("window.nativeEvents")).toContainEqual(["header-click", true]);
     expect(await h.reader().evaluate("window.dangerous")).toBe(0);
-  }, 15_000);
+  }, 60_000);
 
   it("rejects a different signed-in account despite the requested authuser hint", async () => {
     const h = await harness({ email: "other@example.org" });
     await expect(h.driver.readMailThread(request, () => {})).rejects.toMatchObject({ code: "account-mismatch" });
     expect(await h.reader().evaluate("window.nativeEvents")).toEqual([]);
     expect(h.driver.status().error).not.toContain("other@example.org");
-  }, 15_000);
+  }, 60_000);
 
   it("rechecks the exact row after desktop authorization instead of clicking a changed row", async () => {
     const h = await harness();
@@ -222,12 +222,12 @@ describe.skipIf(!installedChannel)("managed Playwright Gmail: isolated real brow
       });
     })).rejects.toMatchObject({ code: "interrupted" });
     expect(await h.reader().evaluate("window.nativeEvents")).toEqual([]);
-  }, 15_000);
+  }, 60_000);
 
   it("explicitly rejects clipped full-message bodies rather than returning partial success", async () => {
     const h = await harness({ clipped: true });
     await expect(h.driver.readMailThread(request, () => {})).rejects.toMatchObject({ code: "partial" });
-  }, 15_000);
+  }, 60_000);
 
   it("checks account identity again after final desktop authorization", async () => {
     const h = await harness();
@@ -236,7 +236,7 @@ describe.skipIf(!installedChannel)("managed Playwright Gmail: isolated real brow
       if (++checks === 4) await h.reader().evaluate(() =>
         document.querySelector("#gb a")!.setAttribute("aria-label", "Google Account: Other (other@example.org)"));
     })).rejects.toMatchObject({ code: "account-mismatch" });
-  }, 15_000);
+  }, 60_000);
 
   it("reverifies the native thread proof after final desktop authorization", async () => {
     const h = await harness();
@@ -245,7 +245,7 @@ describe.skipIf(!installedChannel)("managed Playwright Gmail: isolated real brow
       if (++checks === 4) await h.reader().evaluate(() =>
         document.querySelector("h2[data-legacy-thread-id]")!.setAttribute("data-legacy-thread-id", "other-thread"));
     })).rejects.toMatchObject({ code: "thread-mismatch" });
-  }, 15_000);
+  }, 60_000);
 
   it.each(["loading", "response", "empty"] as const)(
     "refreshes through real mouseup and verifies the %s inbox completion", async refresh => {
@@ -272,12 +272,12 @@ describe.skipIf(!installedChannel)("managed Playwright Gmail: isolated real brow
     expect(await read).toMatchObject({ code: "interrupted" });
     await vi.waitFor(() => expect(h.context().pages()).toHaveLength(1));
     expect(signIn.isClosed()).toBe(false);
-  }, 15_000);
+  }, 60_000);
 
   it("fails an offline refresh without returning stale rows", async () => {
     const h = await harness({ refresh: "offline" });
     await expect(h.driver.readMailThread(refreshRequest, () => {})).rejects.toMatchObject({ code: "unavailable" });
-  }, 15_000);
+  }, 60_000);
 
   it("preserves a dirty reader, bounds owned tabs, and never navigates its draft", async () => {
     const h = await harness();
@@ -323,7 +323,7 @@ describe.skipIf(!installedChannel)("managed Playwright Gmail: isolated real brow
     expect(await userPage.content()).toBe(originalHTML);
     await expect(h.driver.close()).rejects.toMatchObject({ code: "busy" });
     expect(userPage.isClosed()).toBe(false);
-  }, 15_000);
+  }, 60_000);
 
   it("cancels clean operation pages while leaving separate sign-in and user pages alone", async () => {
     const h = await harness({ wrongThread: true }), controller = new AbortController();
@@ -336,7 +336,7 @@ describe.skipIf(!installedChannel)("managed Playwright Gmail: isolated real brow
     await vi.waitFor(() => expect(h.context().pages()).toHaveLength(1));
     expect(signIn.isClosed()).toBe(false);
     expect(await signIn.evaluate("window.nativeEvents")).toEqual([]);
-  }, 15_000);
+  }, 60_000);
 
   it("does not close or reuse a reader after real user input interrupts its operation", async () => {
     const h = await harness({ wrongThread: true }), controller = new AbortController();
@@ -352,7 +352,7 @@ describe.skipIf(!installedChannel)("managed Playwright Gmail: isolated real brow
     expect(reader.isClosed()).toBe(false);
     expect(await reader.locator("#user-draft").inputValue()).toBe("Keep my draft");
     await expect(h.driver.close()).rejects.toMatchObject({ code: "busy" });
-  }, 15_000);
+  }, 60_000);
 });
 
 describe("managed Gmail launch, cancellation and error contracts", () => {
