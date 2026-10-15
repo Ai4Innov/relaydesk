@@ -129,7 +129,7 @@ describe.skipIf(!installedChannel)("managed Playwright Gmail: isolated real brow
     await h.context().route("https://accounts.google.com/**", route => route.fulfill({
       contentType: "text/html", body: '<main><h1>Could not sign you in</h1><div><span>This browser or app may not be secure. Try using a different browser.</span></div></main>'
     }));
-    await h.context().pages()[0].goto("https://accounts.google.com/v3/signin/rejected");
+    await h.context().pages()[0].goto("https://accounts.google.com/v3/signin/rejected", { waitUntil: "domcontentloaded", timeout: 30_000 });
     await expect(h.driver.open(request.accountEmail)).rejects.toMatchObject({ code: "sign-in-blocked" });
     expect(h.driver.status().error).toContain("OAuth flow in your normal browser");
     expect(h.context().pages()).toHaveLength(1);
@@ -147,7 +147,7 @@ describe.skipIf(!installedChannel)("managed Playwright Gmail: isolated real brow
     await h.context().route("https://accounts.google.com/**", route => route.fulfill({
       contentType: "text/html", body: '<h1>Could not sign you in</h1><div id="headingSubtext">This browser or app may not be secure.</div>'
     }));
-    await h.context().pages()[0].goto("https://accounts.google.com/v3/signin/rejected");
+    await h.context().pages()[0].goto("https://accounts.google.com/v3/signin/rejected", { waitUntil: "domcontentloaded", timeout: 30_000 });
     await expect(h.driver.readMailThread(request, () => {})).rejects.toMatchObject({ code: "sign-in-blocked" });
     expect(h.context().pages()).toHaveLength(1);
   }, 60_000);
