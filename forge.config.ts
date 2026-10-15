@@ -35,6 +35,8 @@ const config: ForgeConfig = {
     // Runtime/native dependencies are deliberately external to the Vite bundle.
     ignore: path => {
       const normalized = path.replace(/\\/g, "/");
+      // node_modules/.bin holds CLI links; after dev-dependency pruning some dangle and break the deb/zip makers.
+      if (/^\/node_modules\/(?:.+\/)?\.bin(?:\/|$)/.test(normalized)) return true;
       return normalized !== "" && normalized !== "/" && !/^\/(?:\.vite|node_modules)(?:\/|$)|^\/package\.json$/.test(normalized);
     }
   },

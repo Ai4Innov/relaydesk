@@ -121,7 +121,8 @@ afterEach(async () => {
 });
 afterAll(async () => { await rmdir(resolve(".playwright-mail-tests")).catch(() => undefined); });
 
-describe.skipIf(!installedChannel)("managed Playwright Gmail: isolated real browser DOM", () => {
+// Real browser launches can take well over the default 15 s on shared CI runners.
+describe.skipIf(!installedChannel)("managed Playwright Gmail: isolated real browser DOM", { timeout: 60_000 }, () => {
   it("reports Google's automated-browser rejection and does not open more tabs or retry login", async () => {
     const h = await harness();
     await h.driver.open(request.accountEmail);
