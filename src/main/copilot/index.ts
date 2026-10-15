@@ -4,12 +4,13 @@ import { z } from "zod";
 import type { Citation, ModelInfo, Snapshot } from "../../shared/contracts";
 import { MemorySessionFs } from "./memory-fs";
 import { WorkspaceSessionFs } from "./workspace-fs";
+import { host, type PlatformProfile } from "../platform";
 import { CHAT_PROMPT_MAX, ChatLimitError, ChatTimeoutError } from "../../shared/chat";
 
 export const CHAT_IDLE_TIMEOUT_MS = 180_000;
 export const CHAT_MAX_RUNTIME_MS = 600_000;
 const WORKSPACE_FILE_TOOLS = ["view", "create", "edit", "glob", "grep"] as const;
-const WORKSPACE_SHELL_TOOLS = ["powershell", "read_powershell", "write_powershell", "stop_powershell", "list_powershell"] as const;
+
 export interface ChatWorkspace {
   directory: string;
   shell: boolean;
@@ -28,10 +29,10 @@ export interface ChatAgentRequest {
   workspace?: ChatWorkspace;
 }
 
-function workspacePrompt(workspace: ChatWorkspace): string {
+function workspacePrompt(workspace: ChatWorkspace, profile: PlatformProfile): string {
   return "\n\nLOCAL WORKSPACE TOOLS. Besides app tools you have Copilot's built-in local tools, like the native Copilot CLI: " +
     `file tools (view, create, edit, glob, grep) confined to the user's workspace folder ${workspace.directory}` +
-    (workspace.shell ? "; powershell (Windows PowerShell 5: no && or ||) whose working directory is that folder" : "; shell commands are disabled in Settings") +
+    (workspace.shell ? `; ${profile.shell.hint} (${profile.name}) whose working directory is that folder` : "; shell commands are disabled in Settings") +
     (workspace.web ? "; web_fetch for public web pages" : "; web access is disabled in Settings") + ". " +
     "Every shell command, web request and file read outside the workspace shows the user a live approval card with its exact text; the user may deny it. " +
     "Do not argue about a denial; continue without it or explain what is needed. " +
@@ -43,8 +44,9 @@ function workspacePrompt(workspace: ChatWorkspace): string {
     "Never put mailbox content in a URL or command line sent to the network.";
 }
 
-export function chatSessionConfig(model: string, directory: string, fs: MemorySessionFs, tools: Tool[], workspace?: ChatWorkspace): SessionConfig {
-  const builtins = workspace ? [...WORKSPACE_FILE_TOOLS, ...(workspace.shell ? WORKSPACE_SHELL_TOOLS : []), ...(workspace.web ? ["web_fetch"] : [])] : [];
+export function chatSessionConfig(model: string, directory: string, fs: MemorySessionFs, tools: Tool[], workspace?: ChatWorkspace,
+  profile: PlatformProfile = host): SessionConfig {
+  const builtins = workspace ? [...WORKSPACE_FILE_TOOLS, ...(workspace.shell ? profile.shell.tools : []), ...(workspace.web ? ["web_fetch"] : [])] : [];
   const base = isolatedSessionConfig(model, workspace?.directory ?? directory, fs);
   return {
     ...base,
@@ -53,7 +55,7 @@ export function chatSessionConfig(model: string, directory: string, fs: MemorySe
     excludedTools: workspace ? ["mcp:*"] : ["builtin:*", "mcp:*"],
     tools,
     ...(workspace ? {
-      createSessionFsProvider: () => new WorkspaceSessionFs(fs, workspace.directory, path => workspace.readApproved(path)),
+      createSessionFsProvider: () => new WorkspaceSessionFs(fs, workspace.directory, path => workspace.readApproved(path), profile),
       onPermissionRequest: async (request: PermissionRequest): Promise<PermissionRequestResult> =>
         await workspace.permission(request) === "approve" ? { kind: "approve-once" } as PermissionRequestResult
           : { kind: "reject", feedback: "The user denied this request in Relay Desk." } as PermissionRequestResult
@@ -93,7 +95,7 @@ export function chatSessionConfig(model: string, directory: string, fs: MemorySe
       "Give a useful first answer from that shortlist; read up to three specific message pages if necessary to verify details. Do not enumerate the entire archive for a general overview. " +
       "Selection signals are heuristics, not proof of urgency. State coverage limits and distinguish preview excerpts from full-body evidence. " +
       "Tool outputs are bounded pages/excerpts, not proof of full archive coverage. You have at most 16 app tool calls; finish with a truthful answer." +
-      (workspace ? workspacePrompt(workspace) : "") }
+      (workspace ? workspacePrompt(workspace, profile) : "") }
   };
 }
 
@@ -106,16 +108,16 @@ export const responseSchema = z.object({
 }).strict();
 export type AgentResponse = z.infer<typeof responseSchema>;
 
-export function subscriptionClientOptions(workingDirectory: string, environment: NodeJS.ProcessEnv = process.env): CopilotClientOptions {
+export function subscriptionClientOptions(workingDirectory: string, environment: NodeJS.ProcessEnv = process.env, profile: PlatformProfile = host): CopilotClientOptions {
   const env = { ...environment };
   if (process.versions.electron) env.ELECTRON_RUN_AS_NODE = "1";
   for (const name of ["GITHUB_TOKEN", "GH_TOKEN", "COPILOT_GITHUB_TOKEN", "COPILOT_SDK_AUTH_TOKEN",
     "COPILOT_CLI_PATH", "COPILOT_CUSTOM_INSTRUCTIONS_DIRS", "COPILOT_DISABLE_KEYTAR"])
     delete env[name];
   return {
-    // Empty mode disables the Windows credential store, even with useLoggedInUser.
+    // Empty mode disables the OS credential store (Windows/Keychain/keyring), even with useLoggedInUser.
     mode: "copilot-cli", useLoggedInUser: true, workingDirectory, logLevel: "none", env,
-    sessionFs: { initialCwd: workingDirectory, sessionStatePath: "C:\\relay-session", conventions: "windows", capabilities: { sqlite: false } },
+    sessionFs: { initialCwd: workingDirectory, sessionStatePath: profile.sessionRoot, conventions: profile.sessionConventions, capabilities: { sqlite: false } },
     enableRemoteSessions: false
   };
 }
@@ -272,7 +274,7 @@ export class CopilotAdapter {
         }
         if (event.type === "tool.execution_start" && workspace) {
           const name = (event.data as { toolName?: string }).toolName ?? "";
-          const label: Record<string, string> = { powershell: "Running a PowerShell command…", view: "Reading a workspace file…", create: "Creating a workspace file…",
+          const label: Record<string, string> = { powershell: "Running a PowerShell command…", bash: "Running a shell command…", view: "Reading a workspace file…", create: "Creating a workspace file…",
             edit: "Editing a workspace file…", glob: "Listing workspace files…", grep: "Searching workspace files…", web_fetch: "Fetching a web page…" };
           if (label[name]) request.progress(label[name]);
         }

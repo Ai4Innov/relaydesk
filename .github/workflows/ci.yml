@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "cross-platform/**"]
   pull_request:
 
 permissions:
@@ -14,9 +14,13 @@ concurrency:
 
 jobs:
   test:
-    name: Typecheck and test (Windows)
-    runs-on: windows-latest
-    timeout-minutes: 45
+    name: Typecheck, test and package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
 
@@ -27,6 +31,10 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Install Chromium for browser-companion tests
+        if: runner.os != 'Windows'
+        run: npx playwright install --with-deps chromium
 
       - name: Check native prerequisites
         run: npm run doctor
@@ -39,3 +47,16 @@ jobs:
 
       - name: Package desktop app
         run: npm run package
+
+      - name: Make installers
+        if: github.event_name == 'push'
+        run: npm run make
+
+      - name: Upload installers
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: relay-desk-${{ runner.os }}
+          path: out/make/**
+          if-no-files-found: error
+          retention-days: 14

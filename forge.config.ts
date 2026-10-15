@@ -1,5 +1,6 @@
 import type { ForgeConfig } from "@electron-forge/shared-types";
 import { MakerZIP } from "@electron-forge/maker-zip";
+import { MakerDeb } from "@electron-forge/maker-deb";
 import { VitePlugin } from "@electron-forge/plugin-vite";
 import { execFile } from "node:child_process";
 import { rm } from "node:fs/promises";
@@ -28,6 +29,7 @@ const config: ForgeConfig = {
     asar: false,
     executableName: "RelayDesk",
     appBundleId: "com.relaydesk.personal",
+    appCategoryType: "public.app-category.productivity",
     // Runtime/native dependencies are deliberately external to the Vite bundle.
     ignore: path => {
       const normalized = path.replace(/\\/g, "/");
@@ -35,7 +37,12 @@ const config: ForgeConfig = {
     }
   },
   rebuildConfig: {},
-  makers: [new WindowsZIP({}, ["win32"])],
+  makers: [
+    new WindowsZIP({}, ["win32"]),
+    new MakerZIP({}, ["darwin", "linux"]),
+    new MakerDeb({ options: { name: "relay-desk", bin: "RelayDesk", productName: "Relay Desk", categories: ["Office", "Network"],
+      homepage: "https://github.com/Ai4Innov/relaydesk", depends: ["libsecret-1-0"] } }, ["linux"])
+  ],
   plugins: [
     new VitePlugin({
       build: [

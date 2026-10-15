@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemorySessionFs } from "../src/main/copilot/memory-fs";
+import { platformProfile } from "../src/main/platform";
 import { CopilotAdapter, isolatedSessionConfig, responseSchema, subscriptionClientOptions } from "../src/main/copilot";
 
 const runtime = vi.hoisted(() => ({
@@ -94,14 +95,16 @@ describe("isolated subscription adapter", () => {
     expect(config.enableExperimentalMode).toBe(false);
     expect(config.mcpOAuthTokenStorage).toBe("in-memory");
   });
-  it("stores virtual artifacts only in memory and supports cleanup", async () => {
-    const fs = new MemorySessionFs();
-    await fs.writeFile("C:\\relay-session\\events.jsonl", "secret\n");
-    await fs.appendFile("C:\\relay-session\\events.jsonl", "next\n");
-    expect(await fs.readFile("C:\\relay-session\\events.jsonl")).toBe("secret\nnext\n");
-    expect(await fs.readdir("C:\\relay-session")).toContain("events.jsonl");
+  it.each(["win32", "darwin", "linux"] as const)("stores virtual artifacts only in memory and supports cleanup (%s conventions)", async platform => {
+    const profile = platformProfile(platform);
+    const fs = new MemorySessionFs(profile);
+    const events = profile.path.join(profile.sessionRoot, "events.jsonl");
+    await fs.writeFile(events, "secret\n");
+    await fs.appendFile(events, "next\n");
+    expect(await fs.readFile(events)).toBe("secret\nnext\n");
+    expect(await fs.readdir(profile.sessionRoot)).toContain("events.jsonl");
     fs.clear();
-    expect(await fs.exists("C:\\relay-session\\events.jsonl")).toBe(false);
+    expect(await fs.exists(events)).toBe(false);
   });
   it("rejects success-shaped malformed AI output", () => {
     expect(responseSchema.safeParse({ answer: "Sent it", tool: "send", citationIds: [] }).success).toBe(false);

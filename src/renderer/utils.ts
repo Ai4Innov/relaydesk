@@ -5,6 +5,17 @@ export function commandError(error: unknown): string {
   return message.replace(/^Error invoking remote method ['"]relay:command['"]: (?:Error: )?/, "");
 }
 
+export type HostOS = "windows" | "macos" | "linux";
+/** Renderer-side OS detection for wording only; security decisions stay in the main process. */
+export function hostOS(platform = typeof navigator === "undefined" ? "" : navigator.platform): HostOS {
+  return /^mac/i.test(platform) ? "macos" : /^win/i.test(platform) ? "windows" : /linux|x11|bsd/i.test(platform) ? "linux" : "windows";
+}
+export const OS_TEXT = {
+  windows: { name: "Windows", shell: "PowerShell", tray: "the tray", documents: "Documents\\Relay Desk" },
+  macos: { name: "macOS", shell: "Shell (bash/zsh)", tray: "the menu bar", documents: "Documents/Relay Desk" },
+  linux: { name: "Linux", shell: "Shell (bash)", tray: "the system tray", documents: "Documents/Relay Desk" }
+} as const;
+
 export function formatDate(value: string, withTime = false): string {
   const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00` : value);
   if (!Number.isFinite(date.getTime())) return value || "Not available";

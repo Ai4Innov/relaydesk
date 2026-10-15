@@ -1,16 +1,11 @@
 import { appendFile, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
-import { win32 } from "node:path";
 import type { SessionFsFileInfo, SessionFsProvider } from "@github/copilot-sdk";
 import type { MemorySessionFs } from "./memory-fs";
+import { host, insidePath, type PlatformProfile } from "../platform";
 
-const SESSION_ROOT = "c:\\relay-session";
+export { insidePath };
 const MAX_TEXT_BYTES = 16 * 1024 * 1024;
 
-export function insidePath(root: string, path: string): boolean {
-  const base = win32.resolve(root).toLowerCase().replace(/\\+$/, "");
-  const target = win32.resolve(path).toLowerCase();
-  return target === base || target.startsWith(base + "\\");
-}
 function denied(path: string, workspace: string): Error {
   return Object.assign(new Error(`Access denied: ${path} is outside the Relay Desk workspace (${workspace}). File tools can only use that folder; ask the user before using other locations.`), { code: "EACCES" });
 }
@@ -20,27 +15,29 @@ function denied(path: string, workspace: string): Error {
  * assistant workspace, plus read-only paths the user approved during this turn.
  */
 export class WorkspaceSessionFs implements SessionFsProvider {
-  constructor(private memory: MemorySessionFs, private workspace: string, private readApproved: (path: string) => boolean = () => false) {}
+  constructor(private memory: MemorySessionFs, private workspace: string, private readApproved: (path: string) => boolean = () => false,
+    private profile: PlatformProfile = host) {}
+  private get path() { return this.profile.path; }
   private isSession(path: string): boolean {
-    return !win32.isAbsolute(path) || insidePath(SESSION_ROOT, path);
+    return !this.path.isAbsolute(path) || insidePath(this.profile.sessionRoot, path, this.profile);
   }
   private async resolveReal(path: string): Promise<string> {
     // Resolve the nearest existing ancestor so symlinks/junctions cannot escape the workspace.
-    let current = win32.resolve(path);
+    let current = this.path.resolve(path);
     const suffix: string[] = [];
     for (;;) {
-      try { return win32.join(await realpath(current), ...suffix.reverse()); }
+      try { return this.path.join(await realpath(current), ...suffix.reverse()); }
       catch {
-        const parent = win32.dirname(current);
-        if (parent === current) return win32.resolve(path);
-        suffix.push(win32.basename(current)); current = parent;
+        const parent = this.path.dirname(current);
+        if (parent === current) return this.path.resolve(path);
+        suffix.push(this.path.basename(current)); current = parent;
       }
     }
   }
   private async disk(path: string, write: boolean): Promise<string> {
-    const resolved = win32.resolve(path);
+    const resolved = this.path.resolve(path);
     const root = await this.resolveReal(this.workspace);
-    if (insidePath(this.workspace, resolved) && insidePath(root, await this.resolveReal(resolved))) return resolved;
+    if (insidePath(this.workspace, resolved, this.profile) && insidePath(root, await this.resolveReal(resolved), this.profile)) return resolved;
     if (!write && this.readApproved(resolved)) return resolved;
     throw denied(resolved, this.workspace);
   }
@@ -84,7 +81,7 @@ export class WorkspaceSessionFs implements SessionFsProvider {
   async rm(path: string, recursive: boolean, force: boolean): Promise<void> {
     if (this.isSession(path)) return this.memory.rm(path, recursive, force);
     const target = await this.disk(path, true);
-    if (insidePath(target, this.workspace)) throw new Error("The workspace folder itself cannot be removed.");
+    if (insidePath(target, this.workspace, this.profile)) throw new Error("The workspace folder itself cannot be removed.");
     await rm(target, { recursive, force });
   }
   async rename(src: string, dest: string): Promise<void> {

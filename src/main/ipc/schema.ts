@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { absoluteFolder, host } from "../platform";
 import { productivitySchemas } from "./productivity-schema";
 import { CHAT_MESSAGE_MAX } from "../../shared/chat";
 import { ACCOUNT_LINK_ERROR, ACCOUNT_LINK_MAX_LENGTH, parseBrowserAccountLink } from "../../shared/browser-account-link";
@@ -41,7 +42,7 @@ const settingsPatch = z.object({
   microsoftClientId: z.string().max(100).optional(),
   microsoftTenant: z.string().regex(/^[a-zA-Z0-9.-]+$/).max(200).optional(),
   assistantTools: z.boolean().optional(),
-  assistantWorkspaceDir: z.string().max(500).refine(value => value === "" || /^[A-Za-z]:\\/.test(value), "Use an absolute Windows folder path.").optional(),
+  assistantWorkspaceDir: z.string().max(500).refine(value => value === "" || absoluteFolder(value), `Use an absolute ${host.name} folder path.`).optional(),
   assistantShell: z.enum(["ask", "off"]).optional(),
   assistantWeb: z.enum(["ask", "off"]).optional()
 }).strict();

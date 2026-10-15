@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { randomBytes, createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { spawn } from "node:child_process";
+import { host, openTerminal } from "./platform";
 import { Vault } from "./storage/vault";
 import { RelayService, safeError } from "./service";
 import { PlaywrightMailError } from "./browser/playwright-mail";
@@ -15,7 +15,7 @@ declare const MAIN_WINDOW_VITE_NAME: string;
 
 if (process.env.RELAY_DATA_DIR) app.setPath("userData", resolve(process.env.RELAY_DATA_DIR));
 if (process.env.RELAY_E2E) console.info("[Relay Desk] Main module loaded.");
-app.setAppUserModelId("com.relaydesk.personal");
+if (host.id === "win32") app.setAppUserModelId("com.relaydesk.personal");
 let window: BrowserWindow | undefined;
 let tray: Tray | undefined;
 let service: RelayService | undefined;
@@ -43,6 +43,20 @@ function icon() {
     pixels[index + 3] = 255;
   }
   return nativeImage.createFromBitmap(pixels, { width: size, height: size });
+}
+/** macOS menu-bar icons are ~18pt; Windows/Linux trays use the 32px bitmap. */
+function trayIcon() {
+  return host.id === "darwin" ? icon().resize({ width: 18, height: 18 }) : icon();
+}
+/** Refuses to create an archive when the OS cannot protect its key (for example Linux without a keyring). */
+function protectedKeyStore(): void {
+  if (!safeStorage.isEncryptionAvailable())
+    throw new Error(`${host.credentialStore} is unavailable. Relay Desk will not create an unencrypted archive.`);
+  if (host.id === "linux") {
+    const backend = safeStorage.getSelectedStorageBackend();
+    if (backend === "basic_text" || backend === "unknown")
+      throw new Error("No desktop keyring is available (Secret Service/GNOME Keyring or KWallet). Install and unlock one, then restart Relay Desk; it will not protect the archive key with a hardcoded password.");
+  }
 }
 function openWindow(): void {
   if (window && !window.isDestroyed()) { window.show(); window.focus(); return; }
@@ -89,10 +103,11 @@ function preferences(settings: Settings): void {
 }
 async function start(): Promise<void> {
   if (process.env.RELAY_E2E) console.info("[Relay Desk] Electron ready.");
-  if (!safeStorage.isEncryptionAvailable()) throw new Error("Windows protected credential storage is unavailable. Relay Desk will not create an unencrypted archive.");
+  protectedKeyStore();
   const directory = app.getPath("userData");
   mkdirSync(directory, { recursive: true });
-  const keyPath = join(directory, "archive-key.dpapi");
+  // Windows keeps its historical file name so existing archives open unchanged.
+  const keyPath = join(directory, host.id === "win32" ? "archive-key.dpapi" : "archive-key.safestorage");
   let key: Buffer;
   if (existsSync(keyPath)) key = Buffer.from(safeStorage.decryptString(readFileSync(keyPath)), "hex");
   else {
@@ -116,7 +131,7 @@ async function start(): Promise<void> {
     openPath: async (path, reveal) => {
       if (reveal) { shell.showItemInFolder(path); return; }
       const error = await shell.openPath(path);
-      if (error) throw new Error("Windows could not open this file.");
+      if (error) throw new Error(`${host.name} could not open this file.`);
     },
     chooseFolder: async (title, defaultPath) => {
       const options: Electron.OpenDialogOptions = { title, defaultPath, properties: ["openDirectory", "createDirectory", "dontAddToRecent"] };
@@ -135,11 +150,8 @@ async function start(): Promise<void> {
     },
     copy: text => clipboard.writeText(text),
     loginCopilot: async () => {
-      await new Promise<void>((resolvePromise, reject) => {
-        const child = spawn("cmd.exe", ["/c", "start", '""', "copilot"], { windowsHide: false, stdio: "ignore" });
-        child.once("error", reject);
-        child.once("exit", code => code === 0 ? resolvePromise() : reject(new Error("Install Copilot CLI, run it and use /login, then reconnect here.")));
-      });
+      try { await openTerminal("copilot"); }
+      catch { throw new Error("Install Copilot CLI (npm install -g @github/copilot), run copilot in a terminal and use /login, then reconnect here."); }
     },
     backupPath: async () => (await dialog.showSaveDialog({ title: "Save encrypted Relay Desk backup", defaultPath: "relay-desk.backup", filters: [{ name: "Encrypted backup", extensions: ["backup"] }] })).filePath,
     saveAttachmentPath: async name => {
@@ -184,7 +196,7 @@ async function start(): Promise<void> {
   });
   await service.initialize();
   if (process.env.RELAY_E2E) console.info("[Relay Desk] Services initialized.");
-  tray = new Tray(icon());
+  tray = new Tray(trayIcon());
   tray.setToolTip("Relay Desk - your communications workspace");
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: "Open Relay Desk", click: openWindow },
@@ -192,6 +204,7 @@ async function start(): Promise<void> {
     { label: "Quit Relay Desk", click: () => { quitting = true; app.quit(); } }
   ]));
   tray.on("double-click", openWindow);
+  if (host.id === "darwin") app.dock?.setIcon(icon());
   openWindow();
 }
 if (!app.requestSingleInstanceLock()) app.quit();

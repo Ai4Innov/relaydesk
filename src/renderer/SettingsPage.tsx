@@ -1,7 +1,7 @@
 import { useRef, useState, type FormEvent, type ReactNode } from "react";
 import { ArrowDownToLine, CalendarDays, Database, FolderOpen, Globe, LoaderCircle, Mail, MessageSquare, Plug, Plus, RefreshCw, ShieldCheck, Sparkles, Star, Terminal, Trash2, Wrench, X } from "lucide-react";
 import type { Account, Command, CommandResult, GmailRelayPublicStatus, Provider, Settings, Snapshot } from "../shared/contracts";
-import { fileSize, formatDate } from "./utils";
+import { fileSize, formatDate, hostOS, OS_TEXT } from "./utils";
 import { BrowserSetup } from "./BrowserSetup";
 import { FullMailArchive } from "./FullMailArchive";
 import { RefreshControls } from "./RefreshControls";
@@ -345,10 +345,10 @@ function Assistant({ data, run, busy }: Props) {
         <p>Let chat create files (Word, Excel, PowerPoint, Markdown…), run commands and fetch web pages, like Copilot CLI. Files stay in the workspace folder; commands and web requests always ask you first.</p></div></div>
       <div className="setting-row compact"><div><strong>Enable assistant tools</strong><p>Turn off to keep chat strictly read-only over your communications.</p></div>
         <Toggle label="Enable assistant tools" checked={tools} disabled={busy} onChange={assistantTools => update({ assistantTools })}/></div>
-      <div className="setting-row compact"><div><strong><FolderOpen size={14}/> Workspace folder</strong><p className="mono-path">{data.assistantWorkspace || data.settings.assistantWorkspaceDir || "Documents\\Relay Desk"}</p></div>
+      <div className="setting-row compact"><div><strong><FolderOpen size={14}/> Workspace folder</strong><p className="mono-path">{data.assistantWorkspace || data.settings.assistantWorkspaceDir || OS_TEXT[hostOS()].documents}</p></div>
         <div className="button-row"><button className="secondary small" disabled={busy} onClick={() => void run({ type: "assistant.workspace.choose" })}>Change…</button>
           <button className="quiet small" disabled={busy} onClick={() => void run({ type: "assistant.workspace.open" })}>Open</button></div></div>
-      <div className="setting-row compact"><div><strong><Terminal size={14}/> Shell commands</strong><p>PowerShell commands run in the workspace folder after you approve each one (or allow for a chat).</p></div>
+      <div className="setting-row compact"><div><strong><Terminal size={14}/> Shell commands</strong><p>{OS_TEXT[hostOS()].shell} commands run in the workspace folder after you approve each one (or allow them for one response).</p></div>
         <select aria-label="Shell commands" value={data.settings.assistantShell} disabled={busy || !tools} onChange={event => update({ assistantShell: event.target.value === "off" ? "off" : "ask" })}>
           <option value="ask">Ask every time</option><option value="off">Off</option></select></div>
       <div className="setting-row compact"><div><strong><Globe size={14}/> Web access</strong><p>Fetching a URL asks you first. Email content can never trigger it on its own.</p></div>
@@ -380,8 +380,8 @@ function DataAndApp({ data, run, busy }: Props) {
     <section className="card settings-section" aria-label="App behaviour">
       <div className="settings-heading"><div className="setting-icon"><ShieldCheck/></div><div><h2>App behaviour</h2></div></div>
       {([{ key: "syncPaused", title: "Pause synchronization", text: "Stop new imports. Local content stays available." },
-        { key: "closeToTray", title: "Keep running in the tray", text: "Closing the window keeps Relay Desk running." },
-        { key: "startAtLogin", title: "Start at Windows login", text: "Open Relay Desk when you sign in." },
+        { key: "closeToTray", title: `Keep running in ${OS_TEXT[hostOS()].tray}`, text: "Closing the window keeps Relay Desk running." },
+        { key: "startAtLogin", title: `Start at ${OS_TEXT[hostOS()].name} login`, text: "Open Relay Desk when you sign in." },
         { key: "notifications", title: "Desktop notifications", text: "Discreet notices without message text." }] as const).map(({ key, title, text }) =>
         <div className="setting-row compact" key={key}><div><strong>{title}</strong><p>{text}</p></div><Toggle label={title} checked={data.settings[key]} disabled={busy} onChange={value => update({ [key]: value })}/></div>)}
     </section>

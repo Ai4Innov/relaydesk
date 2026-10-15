@@ -1,4 +1,4 @@
-﻿import { randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { mkdir } from "node:fs/promises";
 import type { Account, ActionItem, Approval, Attachment, CalendarEvent, Citation, Command, CommandResult, Draft, Job, Message, Settings, Snapshot, Source } from "../shared/contracts";
@@ -31,6 +31,7 @@ import { normalizeEmail, now, type CommandContext } from "./commands/context";
 import { accountCommand } from "./commands/accounts";
 import { gmailRelayCommand } from "./commands/gmail-relay";
 import { moveBrowserCalendarEvent } from "./commands/browser-calendar";
+import { homedir } from "node:os";
 
 interface Host {
   changed(): void;
@@ -390,7 +391,7 @@ export class RelayService {
   }
   assistantWorkspace(): string {
     const configured = this.settings().assistantWorkspaceDir;
-    return configured || join(this.host.documentsDirectory ?? process.env.USERPROFILE ?? "C:\\", this.host.documentsDirectory ? "Relay Desk" : "Documents\\Relay Desk");
+    return configured || (this.host.documentsDirectory ? join(this.host.documentsDirectory, "Relay Desk") : join(homedir(), "Documents", "Relay Desk"));
   }
   settings(): Settings {
     const settings = { ...defaultSettings, ...this.vault.get<Settings>("settings", "preferences") };

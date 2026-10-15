@@ -77,9 +77,13 @@
         if (item.state === "interrupted") throw new Error(["USER_CANCELED", "USER_SHUTDOWN"].includes(item.error)
           ? "attachment-interrupted" : "attachment-download-failed");
         if (item.state === "complete") {
-          const relative = attachment.relativePath.replaceAll("/", "\\");
-          if (typeof item.filename !== "string" || !/^[A-Za-z]:\\/.test(item.filename) ||
-            !item.filename.endsWith(`\\Downloads\\${relative}`)) throw new Error("attachment-path-mismatch");
+          // Chrome reports the platform's absolute path: C:\Users\…\Downloads\… or /Users|/home/…/Downloads/….
+          const filename = typeof item.filename === "string" ? item.filename : "";
+          const windows = /^[A-Za-z]:\\/.test(filename);
+          const separator = windows ? "\\" : "/";
+          const relative = attachment.relativePath.replaceAll("/", separator);
+          if (!(windows || filename.startsWith("/")) || filename.includes("\0") ||
+            !filename.endsWith(`${separator}Downloads${separator}${relative}`)) throw new Error("attachment-path-mismatch");
           if (!Number.isSafeInteger(item.bytesReceived) || item.bytesReceived < 0 ||
             item.bytesReceived > attachment.maxBytes || item.totalBytes !== item.bytesReceived ||
             (item.fileSize !== undefined && item.fileSize !== item.bytesReceived))

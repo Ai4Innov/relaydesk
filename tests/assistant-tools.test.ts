@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createDocument, parseMarkdown, safeDocumentName } from "../src/main/documents";
 import { insidePath, WorkspaceSessionFs } from "../src/main/copilot/workspace-fs";
 import { MemorySessionFs } from "../src/main/copilot/memory-fs";
+import { host } from "../src/main/platform";
 
 const dirs: string[] = [];
 const temp = async () => { const dir = await mkdtemp(join(tmpdir(), "relay-tools-")); dirs.push(dir); return dir; };
@@ -44,9 +45,10 @@ describe("workspace session filesystem", () => {
     await fs.writeFile(join(workspace, "a.txt"), "hello");
     expect(await readFile(join(workspace, "a.txt"), "utf8")).toBe("hello");
     expect(await fs.readFile(join(workspace, "a.txt"))).toBe("hello");
-    await fs.mkdir("C:\\relay-session\\state", true);
-    await fs.writeFile("C:\\relay-session\\state\\x.json", "{}");
-    expect(await fs.readFile("C:\\relay-session\\state\\x.json")).toBe("{}");
+    const state = host.path.join(host.sessionRoot, "state");
+    await fs.mkdir(state, true);
+    await fs.writeFile(host.path.join(state, "x.json"), "{}");
+    expect(await fs.readFile(host.path.join(state, "x.json"))).toBe("{}");
     await expect(fs.readFile(join(outside, "secret.txt"))).rejects.toMatchObject({ code: "EACCES" });
     await expect(fs.writeFile(join(outside, "new.txt"), "x")).rejects.toMatchObject({ code: "EACCES" });
     await expect(fs.writeFile(join(workspace, "..", "escape.txt"), "x")).rejects.toMatchObject({ code: "EACCES" });
@@ -55,7 +57,7 @@ describe("workspace session filesystem", () => {
     const workspace = await temp(), outside = await temp();
     const file = join(outside, "approved.txt");
     await writeFile(file, "ok");
-    const fs = new WorkspaceSessionFs(new MemorySessionFs(), workspace, path => path.toLowerCase() === file.toLowerCase());
+    const fs = new WorkspaceSessionFs(new MemorySessionFs(), workspace, path => path === file);
     expect(await fs.readFile(file)).toBe("ok");
     await expect(fs.writeFile(file, "changed")).rejects.toMatchObject({ code: "EACCES" });
   });

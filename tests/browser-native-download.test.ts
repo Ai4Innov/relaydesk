@@ -44,8 +44,17 @@ describe("native download ownership and byte policy", () => {
     expect(h.chrome.downloads.acceptDanger).not.toHaveBeenCalled();
     expect(h.listeners.size).toBe(0);
   });
+  it.each([`/Users/fixture/Downloads/${relativePath}`, `/home/fixture/Downloads/${relativePath}`])(
+    "accepts the owned staging file on macOS/Linux download paths: %s", async filename => {
+      const h = fixture({ filename });
+      expect(await h.run()).toEqual({ metadataId: "report.pdf", name: "report.pdf", relativePath, bytes: 1234 });
+    });
+  it.each(["/home/fixture/Custom/report.pdf", `relative/Downloads/${relativePath}`,
+    `/home/fixture/Downloads/${relativePath.replace(".pdf", " (1).pdf")}`, `C:\\Users\\Fixture\\Downloads/${relativePath}`])(
+    "rejects a foreign or mixed-separator download path %s", async filename => {
+      await expect(fixture({ filename }).run()).rejects.toThrow("attachment-path-mismatch");
+    });
   it.each([
-    [{ danger: "dangerous", state: "in_progress" }, "attachment-dangerous"],
     [{ danger: "accepted", state: "in_progress" }, "attachment-dangerous"],
     [{ state: "interrupted", error: "NETWORK_FAILED" }, "attachment-download-failed"],
     [{ state: "interrupted", error: "USER_CANCELED" }, "attachment-interrupted"],

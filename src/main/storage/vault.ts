@@ -8,6 +8,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import type { Account, Collection, Message, Source } from "../../shared/contracts";
+import { insidePath } from "../platform";
 import { mailboxDate } from "../../shared/mail-date";
 
 export interface IndexChunk {
@@ -366,7 +367,7 @@ export class Vault {
   async backup(destination: string): Promise<void> {
     this.writable();
     if (this.writing.size) throw new Error("Wait for attachment downloads before backing up.");
-    if (resolve(destination).toLowerCase().startsWith(resolve(this.active).toLowerCase() + "\\")) throw new Error("Choose a backup destination outside the active archive.");
+    if (insidePath(this.active, destination)) throw new Error("Choose a backup destination outside the active archive.");
     this.busy = true;
     const snapshot = join(this.directory, `backup-${randomUUID()}.sqlite`);
     const staging = destination + "." + randomUUID() + ".part";

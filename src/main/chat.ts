@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readdir, stat } from "node:fs/promises";
-import { win32 } from "node:path";
+import { host } from "./platform";
 import type { PermissionRequest, Tool } from "@github/copilot-sdk";
 import { z } from "zod";
 import type { Account, Approval, Attachment, CalendarEvent, Citation, Collection, Command, CommandResult, Draft, Message, Settings, Snapshot, Source } from "../shared/contracts";
@@ -120,7 +120,7 @@ async function scanWorkspace(directory: string): Promise<Map<string, { mtime: nu
     try { entries = await readdir(folder, { withFileTypes: true }); } catch { return; }
     for (const entry of entries) {
       if (found.size >= 2000) return;
-      const path = win32.join(folder, entry.name);
+      const path = host.path.join(folder, entry.name);
       if (entry.isDirectory()) { if (depth < 3 && !entry.name.startsWith(".")) await walk(path, depth + 1); }
       else if (entry.isFile()) {
         try { const info = await stat(path); found.set(path, { mtime: info.mtimeMs, size: info.size }); } catch { /* removed meanwhile */ }
@@ -952,7 +952,7 @@ export class ChatService {
     const files = turn.files ??= [];
     const existing = files.find(file => file.path.toLowerCase() === path.toLowerCase());
     if (existing) { existing.size = size; existing.createdAt = now(); }
-    else if (files.length < 50) files.push({ name: win32.basename(path), path, size, createdAt: now() });
+    else if (files.length < 50) files.push({ name: host.path.basename(path), path, size, createdAt: now() });
     this.persist();
   }
   private async permissionRequest(turn: StoredTurn, conversationId: string, request: PermissionRequest, directory: string, approvedReads: Set<string>): Promise<"approve" | "deny"> {
@@ -972,7 +972,7 @@ export class ChatService {
     } else if (request.kind === "shell") {
       if (settings.assistantShell !== "ask") return "deny";
       if (conversation?.grants?.includes("shell")) return "approve";
-      kind = "shell"; title = "Run a PowerShell command"; detail = text(raw.fullCommandText, 8000);
+      kind = "shell"; title = `Run a ${host.shell.name} command`; detail = text(raw.fullCommandText, 8000);
       const warning = text(raw.warning, 500);
       if (warning) detail += `\n\n⚠ ${warning}`;
     } else if (request.kind === "url") {
@@ -1023,7 +1023,7 @@ export class ChatService {
     const turn = this.state.conversations.find(item => item.id === command.conversationId)?.turns.find(item => item.id === command.turnId);
     const file = turn?.files?.find(item => item.path === command.path);
     if (!file || !this.hooks.openPath) throw new Error("This file is not available.");
-    if (!command.reveal && !chatFileOpenable(win32.basename(file.path)))
+    if (!command.reveal && !chatFileOpenable(host.path.basename(file.path)))
       throw new Error("This file type can run code, so Relay Desk only shows it in its folder. Inspect it before opening.");
     await this.hooks.openPath(file.path, !!command.reveal);
     return { message: command.reveal ? "Opened the containing folder." : `Opened ${file.name}.` };

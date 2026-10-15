@@ -1,5 +1,5 @@
 import { mkdir, stat, writeFile } from "node:fs/promises";
-import { win32 } from "node:path";
+import { host } from "./platform";
 import { insidePath } from "./copilot/workspace-fs";
 
 export const DOCUMENT_FORMATS = ["docx", "xlsx", "pptx", "md", "txt", "csv", "html"] as const;
@@ -241,11 +241,11 @@ export function safeDocumentName(fileName: string, format: DocumentFormat): stri
 export async function createDocument(workspace: string, request: DocumentRequest): Promise<CreatedDocument> {
   const name = safeDocumentName(request.fileName, request.format);
   await mkdir(workspace, { recursive: true });
-  let path = win32.join(workspace, name);
+  let path = host.path.join(workspace, name);
   if (!request.overwrite) {
     for (let n = 2; await stat(path).then(() => true, () => false); n++) {
       if (n > 999) throw new Error("Too many files with this name.");
-      path = win32.join(workspace, name.replace(/(\.[a-z]+)$/, ` (${n})$1`));
+      path = host.path.join(workspace, name.replace(/(\.[a-z]+)$/, ` (${n})$1`));
     }
   }
   if (!insidePath(workspace, path)) throw new Error("Documents can only be created in the Relay Desk workspace.");
@@ -257,5 +257,5 @@ export async function createDocument(workspace: string, request: DocumentRequest
       : request.format === "csv" ? csv(request.sheets, content)
       : request.format === "md" && request.title && !/^#\s/.test(content) ? `# ${request.title}\n\n${content}` : content, "utf8");
   await writeFile(path, bytes);
-  return { path, name: win32.basename(path), format: request.format, size: bytes.length };
+  return { path, name: host.path.basename(path), format: request.format, size: bytes.length };
 }
