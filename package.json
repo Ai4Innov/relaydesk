@@ -5,13 +5,13 @@
   "description": "A local-first communications workspace powered by your Copilot subscription.",
   "license": "Apache-2.0",
   "author": "Ai4Innov",
-  "homepage": "https://github.com/Ai4Innov/relay-desk#readme",
+  "homepage": "https://github.com/Ai4Innov/relaydesk#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Ai4Innov/relay-desk.git"
+    "url": "git+https://github.com/Ai4Innov/relaydesk.git"
   },
   "bugs": {
-    "url": "https://github.com/Ai4Innov/relay-desk/issues"
+    "url": "https://github.com/Ai4Innov/relaydesk/issues"
   },
   "keywords": [
     "copilot",

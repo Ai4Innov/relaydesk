@@ -17,8 +17,8 @@ A local-first Windows communications workspace built with Electron, React and Ty
 Requires Windows x64 and official [Node.js 24](https://nodejs.org/) (`^24.13.0`).
 
 ```powershell
-git clone https://github.com/Ai4Innov/relay-desk.git
-cd relay-desk
+git clone https://github.com/Ai4Innov/relaydesk.git
+cd relaydesk
 npm install
 npm run doctor     # checks native prerequisites
 npm start          # launches the desktop app in development mode

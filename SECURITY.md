@@ -4,7 +4,7 @@ Relay Desk stores private communications and connector credentials locally, so w
 
 ## Reporting a vulnerability
 
-**Do not open a public issue for security problems.** Instead, use GitHub's [private vulnerability reporting](https://github.com/Ai4Innov/relay-desk/security/advisories/new) for this repository.
+**Do not open a public issue for security problems.** Instead, use GitHub's [private vulnerability reporting](https://github.com/Ai4Innov/relaydesk/security/advisories/new) for this repository.
 
 Please include:
 

@@ -24,4 +24,4 @@ We, as members, contributors and maintainers, pledge to make participation in th
 
 This code applies in all project spaces, such as issues, pull requests and discussions, and wherever someone represents the project in public.
 
-Report incidents to the maintainers at **[INSERT CONTACT EMAIL]**. All reports are reviewed promptly and kept confidential. Maintainers may remove, edit or reject contributions, and may temporarily or permanently ban participants who violate this code. Enforcement follows the [Contributor Covenant enforcement guidelines](https://www.contributor-covenant.org/version/2/1/code_of_conduct/#enforcement-guidelines).
+Report incidents to the maintainers at **[contact@ai4innov.tech](mailto:contact@ai4innov.tech)**. All reports are reviewed promptly and kept confidential. Maintainers may remove, edit or reject contributions, and may temporarily or permanently ban participants who violate this code. Enforcement follows the [Contributor Covenant enforcement guidelines](https://www.contributor-covenant.org/version/2/1/code_of_conduct/#enforcement-guidelines).
