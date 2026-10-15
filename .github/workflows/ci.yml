@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, "cross-platform/**"]
+    branches: [main]
   pull_request:
 
 permissions:
@@ -38,24 +38,24 @@ jobs:
 
       - name: Check native prerequisites
         shell: bash
-        run: npm run doctor 2>&1 | tee -a ci.log
+        run: npm run doctor
 
       - name: Typecheck
         shell: bash
-        run: npm run typecheck 2>&1 | tee -a ci.log
+        run: npm run typecheck
 
       - name: Unit and integration tests
         shell: bash
-        run: npm run test:ci 2>&1 | tee -a ci.log
+        run: npm run test:ci
 
       - name: Package desktop app
         shell: bash
-        run: npm run package 2>&1 | tee -a ci.log
+        run: npm run package
 
       - name: Make installers
         if: github.event_name == 'push'
         shell: bash
-        run: npm run make 2>&1 | tee -a ci.log
+        run: npm run make
 
       - name: Upload installers
         if: github.event_name == 'push'
@@ -65,37 +65,3 @@ jobs:
           path: out/make/**
           if-no-files-found: error
           retention-days: 14
-
-      - name: Keep log (temporary diagnostics)
-        if: always() && startsWith(github.ref, 'refs/heads/cross-platform/')
-        uses: actions/upload-artifact@v4
-        with:
-          name: ci-log-${{ runner.os }}
-          path: ci.log
-          if-no-files-found: ignore
-
-  # Temporary: private-repo CI logs are pushed to a branch so they can be fetched over SSH. Removed before merging.
-  report:
-    if: always() && startsWith(github.ref, 'refs/heads/cross-platform/')
-    needs: test
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: ci-log-*
-          path: logs
-      - name: Publish logs branch
-        env:
-          RESULT: ${{ needs.test.result }}
-          TOKEN: ${{ github.token }}
-        run: |
-          cd logs
-          echo "result=$RESULT sha=$GITHUB_SHA run=$GITHUB_RUN_ID" > SUMMARY.txt
-          git init -q -b ci-results
-          git config user.name "ci-diagnostics"
-          git config user.email "ci-diagnostics@users.noreply.github.com"
-          git add -A
-          git commit -qm "CI logs for $GITHUB_SHA"
-          git push -fq "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/ci-results/latest
