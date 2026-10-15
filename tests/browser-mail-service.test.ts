@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Account, Attachment, Collection, Message, Source } from "../src/shared/contracts";
 import type { BrowserCapture } from "../src/shared/browser";
 import type { BrowserBridge } from "../src/main/browser/bridge";
@@ -106,7 +108,7 @@ function fixture(managed = false) {
     changed: vi.fn(), openExternal: vi.fn(async () => undefined), copy: vi.fn(), loginCopilot: vi.fn(async () => undefined),
     backupPath: vi.fn(async () => undefined), restorePath: vi.fn(async () => undefined),
     settingsChanged: vi.fn(), notify: vi.fn(), browserExtensionId: "a".repeat(32),
-    ...(managed ? { browserExtensionDirectory: "C:\\relay-synthetic\\extension", playwrightProfileDirectory: "C:\\relay-synthetic\\profile" } : {}),
+    ...(managed ? { browserExtensionDirectory: join(tmpdir(), "relay-synthetic", "extension"), playwrightProfileDirectory: join(tmpdir(), "relay-synthetic", "profile") } : {}),
   };
   const service = new RelayService(vault as unknown as Vault, "tests\\fixtures\\synthetic-mail-service", host);
   services.push(service);

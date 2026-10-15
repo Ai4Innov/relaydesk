@@ -55,6 +55,14 @@ export function browserAttachmentGuard(vault: ImportVault, attachmentId: string,
   };
 }
 
+/**
+ * macOS links /var, /tmp and /etc into /private. A root-owned ancestor link cannot be created or
+ * swapped by the signed-in user, so it is not a redirection risk; user-owned links are still rejected.
+ */
+function systemAncestorLink(stat: { uid: number }, ancestor: boolean): boolean {
+  return ancestor && process.platform !== "win32" && stat.uid === 0;
+}
+
 export async function regularLocalFile(path: string, directory = false): Promise<void> {
   if (!isAbsolute(path) || path.startsWith("\\\\") || path.startsWith("//")
     || path.slice(parse(path).root.length).includes(":"))
@@ -62,7 +70,8 @@ export async function regularLocalFile(path: string, directory = false): Promise
   let current = path;
   while (true) {
     const stat = await lstat(current);
-    if (stat.isSymbolicLink() || (current === path && !directory ? !stat.isFile() : !stat.isDirectory()))
+    if ((stat.isSymbolicLink() && !systemAncestorLink(stat, current !== path))
+      || (!stat.isSymbolicLink() && (current === path && !directory ? !stat.isFile() : !stat.isDirectory())))
       throw new Error("Symbolic links and non-regular files cannot be imported.");
     const parent = dirname(current);
     if (parent === current) break;
