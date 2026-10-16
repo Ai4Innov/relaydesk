@@ -8,6 +8,8 @@ const GMAIL_RELAY_SECRET_PREFIX = "gmail-relay:";
 export const GMAIL_RELAY_STATUS_PREFIX = "gmail-relay-status:";
 const MAX_FILE_CHUNK = 4 * 1024 * 1024;
 const MAX_JSON_BYTES = 8 * 1024 * 1024;
+// Apps Script web apps can take minutes while the mailbox export trigger is busy with Drive; 60 s caused repeated aborts.
+const REQUEST_TIMEOUT_MS = 180_000;
 const now = () => new Date().toISOString();
 const normalizeEmail = (value: string) => value.trim().toLowerCase();
 
@@ -118,7 +120,7 @@ export class GmailRelayTransport {
     let init: RequestInit = { method: "POST", redirect: "manual", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: this.token, action, ...body }) };
     for (let redirect = 0; redirect < 5; redirect++) {
       signal?.throwIfAborted();
-      const response = await this.fetcher(url, { ...init, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(60000)]) : AbortSignal.timeout(60000) });
+      const response = await this.fetcher(url, { ...init, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) : AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
       if ([301, 302, 303, 307, 308].includes(response.status)) {
         const location = response.headers.get("location");
         await response.body?.cancel();
@@ -129,7 +131,11 @@ export class GmailRelayTransport {
       }
       if (!response.ok) { await response.body?.cancel(); throw new Error("Apps Script relay returned an unexpected HTTP status."); }
       const text = await responseText(response);
-      try { return JSON.parse(text) as unknown; } catch { throw new Error("Apps Script relay returned invalid JSON."); }
+      try { return JSON.parse(text) as unknown; } catch {
+        throw new Error(/^\s*<(?:!doctype|html)/i.test(text)
+          ? "Apps Script returned a Google error page instead of data (usually busy while its export runs, or a quota limit). Relay Desk will retry."
+          : "Apps Script relay returned invalid JSON.");
+      }
     }
     throw new Error("Apps Script relay redirected too many times.");
   }
@@ -297,6 +303,17 @@ export class GmailRelayConnector {
     state = { ...state, mailbox: secret.mailbox, lastStatusAt: now(), exportStatus: status.status, phase: status.phase, latestSeq: status.latestSeq,
       tokenExpiresAt: status.tokenExpiresAt ?? null, tokenIsPrevious: status.tokenIsPrevious, lastError: status.lastError || undefined, updatedAt: status.updatedAt || now() };
     this.vault.put("checkpoints", stateId, state);
+    try { await this.importChanges(account, source, secret, transport, stateId, state, onPage, signal); }
+    catch (error) {
+      // Keep the failure visible on the relay card; the import resumes from the saved cursor next time.
+      const current = this.vault.get<GmailRelayState>("checkpoints", stateId) ?? state;
+      if (!signal?.aborted && !current.stopped)
+        this.vault.put("checkpoints", stateId, { ...current, lastError: safeRelayError(error), updatedAt: now() });
+      throw error;
+    }
+  }
+  private async importChanges(account: Account, source: Source, secret: GmailRelaySecret, transport: GmailRelayTransport, stateId: string,
+    state: GmailRelayState, onPage: OnPage, signal?: AbortSignal): Promise<void> {
     for (;;) {
       const changes = await transport.request("changes", { after: state.cursor, limit: 10 }, signal);
       if (changes.mailbox && normalizeEmail(changes.mailbox) !== normalizeEmail(secret.mailbox)) {

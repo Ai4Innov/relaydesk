@@ -28,5 +28,6 @@ export const defaultSettings: Settings = {
   assistantWorkspaceDir: "",
   assistantShell: "ask",
   assistantWeb: "ask",
-  fullAccessByDefault: true
+  fullAccessByDefault: true,
+  autoApprove: true
 };

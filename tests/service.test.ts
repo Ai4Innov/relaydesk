@@ -595,6 +595,21 @@ describe("RelayService safety integration (in-memory storage and offline provide
     await expect(service.command({ type: "calendar.approve", approvalId: approval.id, hash: approval.hash })).rejects.toThrow("no longer pending");
   });
 
+  it("auto-approves calendar changes without attendees by default, but never ones that notify attendees", async () => {
+    vault.put("settings", "preferences", { ...service.settings(), autoApprove: true });
+    const invited = await service.command({ type: "calendar.propose", change: { ...change, attendees: ["guest@example.com"] } });
+    expect(vault.get<Approval>("approvals", invited.approvalId!)?.status).toBe("pending");
+    expect(service.connectors.writeEvent).not.toHaveBeenCalled();
+    const privateChange = { ...change, attendees: [] };
+    const result = await service.command({ type: "calendar.propose", change: privateChange });
+    expect(vault.get<Approval>("approvals", result.approvalId!)?.status).toBe("done");
+    expect(service.connectors.writeEvent).toHaveBeenCalledExactlyOnceWith(account, expect.objectContaining({ id: "calendar" }), privateChange, result.approvalId);
+    vault.put("settings", "preferences", { ...service.settings(), autoApprove: false });
+    const manual = await service.command({ type: "calendar.propose", change: privateChange });
+    expect(vault.get<Approval>("approvals", manual.approvalId!)?.status).toBe("pending");
+    expect(service.connectors.writeEvent).toHaveBeenCalledTimes(1);
+  });
+
   it("rejects approval payload tampering and expiry", async () => {
     const approval = proposeChange(change);
     vault.put("approvals", approval.id, { ...approval, change: { ...change, attendees: ["unreviewed@example.com"] } });

@@ -79,8 +79,9 @@ Relay Desk is set up so that it just works once an inbox is connected. You can c
 | 🟢 **Full access by default**: new accounts are imported, all of their folders, channels and calendars are selected, and they are shared with your AI | **On** | Settings → AI & assistant (global), or the **Allow AI** and source toggles on each account in Settings → Connections |
 | 🟢 Background AI: prioritizes new mail and pre-drafts replies | **On**, capped at 20 runs per day | Settings → AI & assistant |
 | 🟢 Background browser refresh: keeps capturing open Gmail and Calendar tabs | **On** | Settings → Connections |
+| 🟢 **Approve automatically**: large or unknown-size attachments, costly extraction, and calendar changes without attendees | **On** (size, parser and sandbox limits still apply) | Activity & approvals |
 | 🟡 Shell commands, web requests and reading files outside the workspace | **Ask each time** | Settings → AI & assistant |
-| 🟡 Saving a draft to Gmail or Outlook, creating or moving calendar events | **You confirm each one** | — |
+| 🟡 Saving a draft to Gmail or Outlook, and calendar changes that would notify attendees | **You confirm each one** | — |
 | 🟡 WhatsApp chats (personal conversations with third parties) | **Opt-in per chat** | Settings → Connections |
 | 🔴 Sending email, posting to Slack, deleting mail or events | **Never** | Not possible |
 

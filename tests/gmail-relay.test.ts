@@ -75,6 +75,19 @@ describe("Gmail Apps Script relay", () => {
     await expect(new GmailRelayConnector(vault, relayFetcher({ badSize: true })).sync(account, source, () => { throw new Error("should not commit"); })).rejects.toThrow("size");
     expect(vault.get("checkpoints", `gmail-relay-status:${source.id}`)).toMatchObject({ cursor: 0 });
   });
+  it("explains a Google HTML error page, retries it, and keeps the failure visible on the relay status", async () => {
+    const vault = new MemoryVault(); vault.put("sources", source.id, source); vault.put("secrets", `gmail-relay:${source.id}`, secret);
+    const base = relayFetcher();
+    const fetcher = vi.fn<Fetch>(async (input, init) => JSON.parse(String(init?.body)).action === "changes"
+      ? new Response("<!DOCTYPE html><html><body>Google error</body></html>", { status: 200 }) : base(input, init));
+    const transport = new GmailRelayTransport(secret.url, secret.token, fetcher, async () => undefined);
+    await expect(transport.request("changes", { after: 0 })).rejects.toThrow("Google error page");
+    expect(fetcher.mock.calls.filter(([, init]) => JSON.parse(String(init?.body)).action === "changes")).toHaveLength(4);
+    const connector = new GmailRelayConnector(vault, fetcher);
+    vi.spyOn(connector, "transport").mockReturnValue(transport);
+    await expect(connector.sync(account, source, () => undefined)).rejects.toThrow("Google error page");
+    expect(vault.get("checkpoints", `gmail-relay-status:${source.id}`)).toMatchObject({ cursor: 0, lastError: expect.stringContaining("Google error page") });
+  });
   it("stops before import when the relay reports a different mailbox", async () => {
     const vault = new MemoryVault(); vault.put("sources", source.id, source); vault.put("secrets", `gmail-relay:${source.id}`, secret);
     await expect(new GmailRelayConnector(vault, relayFetcher({ mismatch: true })).sync(account, source, () => undefined)).rejects.toThrow("mailbox changed");

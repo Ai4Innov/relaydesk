@@ -235,6 +235,8 @@ export interface Settings {
   assistantWeb: "ask" | "off";
   /** New accounts get data access + AI and all discovered sources selected (WhatsApp excepted). */
   fullAccessByDefault: boolean;
+  /** Activity approvals happen automatically: attachment downloads/processing and calendar changes without attendees. */
+  autoApprove: boolean;
 }
 export interface GmailRelayPublicStatus {
   sourceId: string;

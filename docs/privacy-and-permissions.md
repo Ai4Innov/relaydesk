@@ -73,7 +73,7 @@ Disabling a source excludes it from ingestion/retrieval/AI; it is not a command 
 
 The UI can show retained local messages even when an account is disconnected. Exclusion from active retrieval is not a promise of an immediate secure wipe. Backups and filesystem/OS backups may still contain older encrypted copies; remove unwanted backups separately. Secure physical deletion on SSDs cannot be guaranteed.
 
-Synchronization can be paused. Background AI (capped by the local daily budget) and background browser refresh are on by default; start-at-login is off by default. Closing to tray is on by default; use Quit to stop the application. A revoked permission cannot recall a request already in flight; the service rechecks authorization before accepting generated output and writing drafts.
+Synchronization can be paused. Background AI (capped by the local daily budget) and background browser refresh are on by default. **Approve automatically** (Activity & approvals) is also on: attachment downloads/processing above the size threshold or of unknown size, and calendar changes with no attendees, proceed without a separate click, while size, parser and sandbox limits still apply and changes that notify attendees still wait for approval; start-at-login is off by default. Closing to tray is on by default; use Quit to stop the application. A revoked permission cannot recall a request already in flight; the service rechecks authorization before accepting generated output and writing drafts.
 
 ## Storage and recovery
 

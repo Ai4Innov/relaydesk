@@ -46,7 +46,8 @@ const settingsPatch = z.object({
   assistantWorkspaceDir: z.string().max(500).refine(value => value === "" || absoluteFolder(value), `Use an absolute ${host.name} folder path.`).optional(),
   assistantShell: z.enum(["ask", "off"]).optional(),
   assistantWeb: z.enum(["ask", "off"]).optional(),
-  fullAccessByDefault: z.boolean().optional()
+  fullAccessByDefault: z.boolean().optional(),
+  autoApprove: z.boolean().optional()
 }).strict();
 const relayUrl = z.string().trim().min(1).max(2000).refine(value => {
   try {

@@ -119,7 +119,7 @@ export class RelayService {
           throw new Error("Browser attachment bytes require an authorized native browser download or an imported copy, never API credentials.");
         return this.connectors.downloadAttachment(account, attachment, signal);
       },
-      { modelDirectory: join(directory, "models"), thresholdMb: () => this.settings().attachmentThresholdMb }
+      { modelDirectory: join(directory, "models"), thresholdMb: () => this.settings().attachmentThresholdMb, autoApprove: () => this.settings().autoApprove }
     );
     this.productivity = new ProductivityService(vault, {
       changed: host.changed,
@@ -156,7 +156,8 @@ export class RelayService {
           throw new Error("Choose an authorized API calendar for task scheduling.");
         if (change.attendees.length) throw new Error("Task scheduling only creates private events without attendees.");
         if (!source.selected) await this.command({ type: "source.select", sourceId: source.id, selected: true });
-        const proposed = await this.command({ type: "calendar.propose", change });
+        const proposed = await this.command({ type: "calendar.propose", change }, beforeWrite);
+        if (proposed.eventId) return { eventId: proposed.eventId };
         const approval = proposed.approvalId ? this.vault.get<Approval>("approvals", proposed.approvalId) : undefined;
         if (!approval) throw new Error("The calendar proposal could not be prepared.");
         const result = await this.command({ type: "calendar.approve", approvalId: approval.id, hash: approval.hash }, beforeWrite);
@@ -261,6 +262,7 @@ export class RelayService {
       downloadsDirectory: host.downloadsDirectory, enabled: () => this.settings().browserAttachmentDownload,
       unavailable: () => this.stopped || this.restoring || this.freshnessActive || this.attachmentBusy || this.settings().syncPaused || !this.browser?.status().paired,
       revision: () => this.documentAccessRevision, thresholdMb: () => this.settings().attachmentThresholdMb,
+      autoApprove: () => this.settings().autoApprove,
       changed: host.changed
     });
     this.freshness = new MailFreshness(vault, {
@@ -579,14 +581,15 @@ export class RelayService {
       const message = this.vault.get<Message>("messages", attachment.messageId);
       return ((!attachment.browser && account?.connection !== "browser") || !!attachment.gmailApi)
         && (!attachment.browser || this.settings().browserAttachmentDownload)
-        && attachment.status === "pending" && account?.status === "connected" && account.consent && !account.demo
+        && (attachment.status === "pending" || (attachment.status === "awaiting-approval" && this.settings().autoApprove))
+        && account?.status === "connected" && account.consent && !account.demo
         && message && mailOriginAllowed(this.vault, message)
         && mailOriginAllowed(this.vault, { ...message, gmailApi: attachment.gmailApi })
         && this.vault.get<Source>("sources", message.sourceId)?.selected;
     }).slice(0, 3);
     for (const attachment of eligible) {
       if (this.stopped || this.browserDownloads.running || this.settings().syncPaused) break;
-      await this.command({ type: "attachment.process", attachmentId: attachment.id, approved: false });
+      await this.command({ type: "attachment.process", attachmentId: attachment.id, approved: this.settings().autoApprove });
     }
   }
   private async runJob<T>(kind: Job["kind"], label: string, task: (job: Job) => Promise<T>, accountId?: string, args?: Command): Promise<T> {
@@ -1273,6 +1276,11 @@ export class RelayService {
         const approval = proposeChange(command.change);
         this.vault.put("approvals", approval.id, approval);
         this.host.changed();
+        // Approve by default only when no attendee would be notified; invitations still need an explicit click.
+        if (this.settings().autoApprove && !command.change.attendees.some(attendee => attendee.trim())) {
+          const saved = await this.command({ type: "calendar.approve", approvalId: approval.id, hash: approval.hash }, beforeWrite);
+          return { ...saved, approvalId: approval.id, message: "Calendar change saved (approved automatically: no attendees are notified)." };
+        }
         return { approvalId: approval.id, message: "Review the exact calendar change and its invitation effects before approving." };
       }
       case "calendar.approve": {

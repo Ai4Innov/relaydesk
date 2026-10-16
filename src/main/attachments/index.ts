@@ -16,6 +16,8 @@ interface AttachmentRetrieval {
   indexAttachment(attachment: Attachment, segments: { text: string; location: string }[]): Promise<void>;
 }
 interface Options {
+  /** Approval granted by default (Settings → Activity). Safety and resource limits still apply. */
+  autoApprove?(): boolean;
   modelDirectory: string;
   thresholdMb: () => number;
   /** Explicit override for tests/custom deployment; production copies the CJS asset beside main.js. */
@@ -46,6 +48,7 @@ export class AttachmentProcessor {
   ) {}
 
   async process(attachmentId: string, approved: boolean, signal?: AbortSignal, input?: AttachmentInput): Promise<void> {
+    approved ||= this.options.autoApprove?.() === true;
     if (active.has(attachmentId)) return;
     const original = this.vault.get<Attachment>("attachments", attachmentId);
     if (!original) throw new Error("Attachment not found.");

@@ -19,6 +19,7 @@ interface Hooks {
   unavailable(): boolean;
   revision(): number;
   thresholdMb(): number;
+  autoApprove?(): boolean;
   changed(): void;
   now?(): number;
 }
@@ -89,7 +90,7 @@ export class BrowserAttachmentDownloads {
     for (const attachment of this.vault.all<Attachment>("attachments")) {
       const attempt = this.vault.get<Attempt>("checkpoints", key(attachment.id));
       if (attachment.gmailApi || attachment.browser?.source !== "browser_gmail"
-        || (["indexed", "partial", "unsupported", "blocked", "awaiting-approval"].includes(attachment.status)
+        || (["indexed", "partial", "unsupported", "blocked", ...(this.hooks.autoApprove?.() ? [] : ["awaiting-approval"])].includes(attachment.status)
           && !(attachment.hash && attempt?.relativePath))) continue;
       if (attempt?.nextRetryAt && attempt.nextRetryAt > this.clock()) continue;
       try { browserAttachmentGuard(this.vault, attachment.id, this.hooks.unavailable)(); } catch { continue; }
@@ -159,6 +160,7 @@ export class BrowserAttachmentDownloads {
   }
 
   private async perform(attachmentId: string, approved: boolean, automatic: boolean): Promise<void> {
+    approved ||= this.hooks.autoApprove?.() === true;
     const epoch = this.hooks.revision(), revision = this.revision;
     const unavailable = () => this.hooks.unavailable() || epoch !== this.hooks.revision()
       || revision !== this.revision || this.controller!.signal.aborted || (automatic && !this.hooks.enabled());

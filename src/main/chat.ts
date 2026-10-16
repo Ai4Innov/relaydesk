@@ -1150,7 +1150,9 @@ export class ChatService {
     }
     const guards = this.validateAction(command, turn);
     const review = this.review(command, turn);
-    const description = command.type === "calendar.propose" ? "Creates a separate calendar approval, not a provider write. Afterwards ask chat to prepare its exact write preview, or review it in Calendar." :
+    const autoWrite = command.type === "calendar.propose" && this.hooks.settings().autoApprove && !command.change.attendees.some(attendee => attendee.trim());
+    const description = autoWrite ? "Writes exactly this calendar change when you confirm. No attendees are notified, so it is approved automatically (Activity setting)." :
+      command.type === "calendar.propose" ? "Creates a separate calendar approval, not a provider write. Afterwards ask chat to prepare its exact write preview, or review it in Calendar." :
       command.type === "draft.generate" ? "Generates a local reply draft using the selected AI provider. Afterwards ask chat for an exact native-save preview, or review it in Drafts. Never sends mail." :
       command.type === "review.start" ? "Starts a bounded full-archive review using your AI budget. Pause or cancel it in AI review." :
       command.type === "draft.save" || command.type === "draft.handoff" ? "Saves exactly the reviewed recipients, subject and body as a native mailbox draft. Nothing is sent. Uncertain saves must be checked in the mailbox." :
