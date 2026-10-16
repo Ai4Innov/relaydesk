@@ -19,6 +19,7 @@ function capture(email = "first@example.org"): BrowserCapture {
 }
 function setup() {
   const vault = new MemoryVault(), index = vi.fn(async (_message: Message) => undefined), paused = vi.fn(() => false);
+  vault.put("settings", "preferences", { fullAccessByDefault: false });
   const archive = new BrowserArchive(vault as unknown as Vault, index, vi.fn(), paused);
   const enable = (email: string, kind = "mail") => {
     const id = `${browserAccountId(email)}:${kind}`;
@@ -26,6 +27,27 @@ function setup() {
   };
   return { vault, archive, index, paused, enable };
 }
+describe("full access by default (frictionless onboarding)", () => {
+  it("grants AI and selects mail and calendar sources for a new account when no preference is stored", async () => {
+    const vault = new MemoryVault(), index = vi.fn(async (_message: Message) => undefined);
+    const archive = new BrowserArchive(vault as unknown as Vault, index, vi.fn(), () => false);
+    const { accountId } = archive.discover(capture());
+    expect(vault.get<Account>("accounts", accountId)).toMatchObject({ consent: true, aiEnabled: true });
+    expect(vault.get<Source>("sources", `${accountId}:mail`)?.selected).toBe(true);
+    expect(vault.get<Source>("sources", `${accountId}:calendar`)?.selected).toBe(true);
+    expect(await archive.capture(capture())).toHaveLength(1);
+  });
+  it("never overrides an existing account's explicit AI choice on rediscovery", () => {
+    const vault = new MemoryVault();
+    const archive = new BrowserArchive(vault as unknown as Vault, vi.fn(async () => undefined), vi.fn(), () => false);
+    const { accountId } = archive.discover(capture());
+    vault.put("accounts", accountId, { ...vault.get<Account>("accounts", accountId)!, aiEnabled: false });
+    vault.put("sources", `${accountId}:calendar`, { ...vault.get<Source>("sources", `${accountId}:calendar`)!, selected: false });
+    archive.discover(capture());
+    expect(vault.get<Account>("accounts", accountId)?.aiEnabled).toBe(false);
+    expect(vault.get<Source>("sources", `${accountId}:calendar`)?.selected).toBe(false);
+  });
+});
 describe("browser archive account and consent boundaries", () => {
   it("stores the original Gmail tooltip date and preserves it when a later capture lacks a date", async () => {
     const { archive, vault, enable } = setup();

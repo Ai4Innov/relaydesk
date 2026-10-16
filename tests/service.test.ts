@@ -142,7 +142,8 @@ describe("RelayService safety integration (in-memory storage and offline provide
     vault.put("sources", source.id, source);
     vault.put("sources", "calendar", { ...source, id: "calendar", kind: "calendar" });
     vault.put("messages", message.id, message);
-    vault.put("settings", "preferences", { ...defaultSettings, model: "test-model", aiUsageDate: new Date().toISOString().slice(0, 10) });
+    // These tests exercise the explicit opt-in profile (full access off).
+    vault.put("settings", "preferences", { ...defaultSettings, fullAccessByDefault: false, backgroundAi: false, browserBackgroundCapture: false, model: "test-model", aiUsageDate: new Date().toISOString().slice(0, 10) });
     host = {
       changed: vi.fn(), openExternal: vi.fn().mockResolvedValue(undefined), copy: vi.fn(),
       loginCopilot: vi.fn().mockResolvedValue(undefined), backupPath: vi.fn().mockResolvedValue("encrypted.backup"),

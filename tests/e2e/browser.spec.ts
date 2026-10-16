@@ -24,6 +24,8 @@ test("packaged browser accounts isolate captures, retain consent and survive res
   try {
     application = await electron.launch({ executablePath, args: executablePath ? [] : ["."], env });
     let page = await application.firstWindow();
+    // This scenario verifies the explicit opt-in profile, so turn off full access by default first.
+    await page.evaluate(() => window.relay.command({ type: "settings.update", patch: { fullAccessByDefault: false } }));
     const pairing = await page.evaluate(() => window.relay.command({ type: "browser.pair", consent: true }));
     expect(pairing.browserPairing?.code).toMatch(/^\d{6}$/);
     const paired = await post("/pair", { code: pairing.browserPairing!.code });

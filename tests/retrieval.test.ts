@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import type { Account, Attachment, Message, Source } from "../src/shared/contracts";
 import { Vault } from "../src/main/storage/vault";
+import { defaultSettings } from "../src/shared/defaults";
 import { Retrieval, keywordQuery } from "../src/main/retrieval";
 import { BrowserArchive } from "../src/main/browser/archive";
 import type { BrowserCapture } from "../src/shared/browser";
@@ -29,6 +30,7 @@ afterEach(() => { for (const { root, vault } of resources.splice(0)) { vault.clo
 describe("local retrieval", () => {
   it("indexes actual downloaded browser bodies with AI off, preserves preview references and never indexes HTML", async () => {
     const { vault, retrieval } = setup();
+    vault.put("settings", "preferences", { ...defaultSettings, fullAccessByDefault: false });
     const archive = new BrowserArchive(vault, value => retrieval.indexMessage(value), () => {}, () => false);
     const capture: BrowserCapture = { accountEmail: "synthetic@example.test", accountName: "Synthetic",
       pageUrl: "https://mail.google.com/mail/u/0/#inbox", kind: "mail", meetings: [],

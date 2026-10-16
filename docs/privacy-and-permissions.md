@@ -67,13 +67,13 @@ Tokens are not read from the Slack desktop client or browser cookies. There is n
 
 ## Local controls and their limits
 
-Connecting requires archive-access consent. Enabling AI is a separate per-account action, while source selection determines which folders/channels/calendars are used. Scopes may cover more data than selected sources; source selection is an application policy, not a narrower provider token.
+Connecting requires archive-access consent. With **Full access by default** (on unless you turn it off in Settings → AI & assistant), a newly connected account is also shared with AI and all of its discovered folders/channels/calendars are selected; turn the setting off to make AI and source selection explicit per-account actions. Per-account **Allow AI** and source toggles always win, and WhatsApp chats stay opt-in. Scopes may cover more data than selected sources; source selection is an application policy, not a narrower provider token.
 
 Disabling a source excludes it from ingestion/retrieval/AI; it is not a command to erase provider data or necessarily delete retained local records. Disconnecting disables local use of the account and removes connector credentials. Forgetting additionally removes account-derived local data. These actions cannot retract excerpts already sent to Copilot or data copied to the clipboard. Independently revoke provider authorization in the provider's account/workspace settings when needed.
 
 The UI can show retained local messages even when an account is disconnected. Exclusion from active retrieval is not a promise of an immediate secure wipe. Backups and filesystem/OS backups may still contain older encrypted copies; remove unwanted backups separately. Secure physical deletion on SSDs cannot be guaranteed.
 
-Synchronization can be paused. Background AI and start-at-login are off by default. Closing to tray is on by default; use Quit to stop the application. A revoked permission cannot recall a request already in flight; the service rechecks authorization before accepting generated output and writing drafts.
+Synchronization can be paused. Background AI (capped by the local daily budget) and background browser refresh are on by default; start-at-login is off by default. Closing to tray is on by default; use Quit to stop the application. A revoked permission cannot recall a request already in flight; the service rechecks authorization before accepting generated output and writing drafts.
 
 ## Storage and recovery
 

@@ -27,7 +27,9 @@ export function setupSteps(data: Snapshot): SetupStep[] {
     { id: "inbox", title: "Connect an inbox", done: real.some(account => selected(account.id)),
       detail: "Fastest: the browser companion uses Gmail tabs you already have open. Gmail API, Apps Script relay, Outlook and Slack are optional." },
     { id: "consent", title: `Let ${ai.name} read the sources you choose`, done: real.some(account => account.aiEnabled && selected(account.id)),
-      detail: "AI access is opt-in per account. Nothing is sent; replies stay drafts." },
+      detail: data.settings.fullAccessByDefault
+        ? "On by default: connected inboxes are shared with AI automatically. Narrow it per account in Settings. Nothing is sent; replies stay drafts."
+        : "AI access is opt-in per account. Nothing is sent; replies stay drafts." },
     { id: "ask", title: "Ask your first question", done: (data.chat?.conversations ?? []).some(conversation => conversation.turns.length > 0),
       detail: "Try “What needs my attention today?”" }
   ];

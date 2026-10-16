@@ -1,6 +1,7 @@
 import type { Account, Command, CommandResult, Source } from "../../shared/contracts";
 import { demoData } from "../demo";
 import type { CommandContext } from "./context";
+import { fullAccessByDefault } from "../access";
 
 type AccountCommand = Extract<Command, { type: "demo.load" | "demo.clear" | "account.connect" | "account.disconnect" | "account.consent" | "account.ai" | "source.select" }>;
 
@@ -33,11 +34,13 @@ export async function accountCommand(ctx: CommandContext, command: AccountComman
       if (!command.consent) throw new Error("Confirm that you are authorized to archive these communications before connecting.");
       return ctx.runJob("sync", `Connect ${command.provider}`, async () => {
         const result = await ctx.connectors.connect(command.provider, ctx.settings(), command.token);
+        const full = fullAccessByDefault(vault);
+        const known = vault.get<Account>("accounts", result.account.id);
         vault.transaction(() => {
-          vault.put("accounts", result.account.id, { ...result.account, consent: true, aiEnabled: false });
+          vault.put("accounts", result.account.id, { ...result.account, consent: true, aiEnabled: full && (known?.aiEnabled ?? true) });
           for (const source of result.sources) {
             const previous = vault.get<Source>("sources", source.id);
-            vault.put("sources", source.id, { ...source, selected: previous?.selected ?? false });
+            vault.put("sources", source.id, { ...source, selected: previous?.selected ?? full });
           }
           const available = new Set(result.sources.map(source => source.id));
           for (const source of vault.all<Source>("sources"))
@@ -45,7 +48,7 @@ export async function accountCommand(ctx: CommandContext, command: AccountComman
               vault.put("sources", source.id, { ...source, selected: false });
         });
         ctx.changed();
-        return { message: "Account connected. Select the folders, channels and calendars to import." };
+        return { message: full ? "Account connected with full access: all folders, channels and calendars are imported and available to AI. Narrow this any time in Settings." : "Account connected. Select the folders, channels and calendars to import." };
       });
     }
     case "account.disconnect": {

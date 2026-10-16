@@ -88,6 +88,8 @@ function addThread(vault: MemoryVault, thread = "thread-A", email = "a@example.o
 }
 const services: RelayService[] = [];
 function fixture(vault = new MemoryVault()) {
+  if (!vault.get("settings", "preferences"))
+    vault.put("settings", "preferences", { ...defaultSettings, fullAccessByDefault: false, backgroundAi: false, browserBackgroundCapture: false });
   const host = {
     changed: vi.fn(), openExternal: vi.fn(async () => undefined), copy: vi.fn(), loginCopilot: vi.fn(async () => undefined),
     backupPath: vi.fn(async () => undefined), restorePath: vi.fn(async () => undefined),

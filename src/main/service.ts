@@ -38,6 +38,7 @@ import { accountCommand } from "./commands/accounts";
 import { gmailRelayCommand } from "./commands/gmail-relay";
 import { moveBrowserCalendarEvent } from "./commands/browser-calendar";
 import { homedir } from "node:os";
+import { fullAccessByDefault } from "./access";
 
 interface Host {
   changed(): void;
@@ -912,9 +913,10 @@ export class RelayService {
         if (!this.browser) throw new Error("The browser companion is unavailable in this build.");
         const pairing = await this.browser.pair();
         for (const account of this.vault.all<Account>("accounts").filter(account => account.connection === "browser" && account.status === "disconnected")) {
-          this.vault.put("accounts", account.id, { ...account, status: "connected", consent: true, aiEnabled: false });
+          const full = fullAccessByDefault(this.vault) && account.provider !== "whatsapp";
+          this.vault.put("accounts", account.id, { ...account, status: "connected", consent: true, aiEnabled: full });
           for (const source of this.vault.all<Source>("sources").filter(source => source.accountId === account.id))
-            this.vault.put("sources", source.id, { ...source, selected: false });
+            this.vault.put("sources", source.id, { ...source, selected: full });
         }
         for (const marker of this.vault.all<{ id?: string }>("checkpoints"))
           if (marker.id?.startsWith("browser-forgotten:")) this.vault.delete("checkpoints", marker.id);

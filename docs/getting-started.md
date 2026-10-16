@@ -12,7 +12,7 @@ flowchart LR
     D -->|1| E[Connect Copilot]
     D -->|2| F[Choose a model]
     D -->|3| G[Connect an inbox]
-    D -->|4| H[Allow AI for<br/>chosen sources]
+    D -->|4| H[AI access<br/>automatic by default]
     D -->|5| I[Ask: What needs<br/>my attention?]
     D -.->|Just looking?| S[Explore the sample workspace]
 ```
@@ -117,10 +117,10 @@ CI builds the same artifacts for all three platforms on every push to `main`.
 
 | Step | What to do | Where |
 | --- | --- | --- |
-| **Connect your AI provider** | Click **Connect Copilot** (or Codex/Claude if you switched). If it says you are not signed in, click **Sign in**: a terminal opens with `copilot` (type `/login`) or `codex login`. For Claude, click **Add API key**. | Chat checklist, or Settings → Copilot & assistant |
+| **Connect your AI provider** | Click **Connect Copilot** (or Codex/Claude if you switched). If it says you are not signed in, click **Sign in**: a terminal opens with `copilot` (type `/login`) or `codex login`. For Claude, click **Add API key**. | Chat checklist, or Settings → AI & assistant |
 | **Choose a model** | Pick any model your subscription allows. You can change it later, even for a single question. | Checklist dropdown, or the model picker above the chat box |
 | **Connect an inbox** | The easiest route is the **browser companion**. It reads the Gmail and Calendar tabs you already have open, with no Google Cloud setup. Other options: the Apps Script relay, the Gmail API, Microsoft 365, Slack or WhatsApp Web. | Settings → Connections |
-| **Allow AI for chosen sources** | Turn on AI only for the accounts and sources you want your AI provider to read. Everything else stays local. | Settings → Connections → each account |
+| **AI access (automatic)** | Nothing to do. **Full access by default** is on, so every inbox, channel and calendar you connect is imported and shared with your AI provider, and this step ticks itself. To be selective, turn it off in Settings → AI & assistant, or switch off **Allow AI** on any account. WhatsApp chats stay opt-in. | Settings → Connections / AI & assistant |
 | **Ask** | Try *“What needs my attention today?”* Answers cite their sources, and every write appears as a card you confirm. | Chat |
 
 Want to look around first? On the **Connect an inbox** step, click **Explore a sample workspace** to load synthetic Gmail, Outlook, Slack and calendar data. It touches no real account.
@@ -153,7 +153,7 @@ flowchart LR
 ```
 
 - Your messages are stored **only on your computer**, encrypted with a key held by the OS keychain (Windows DPAPI, macOS Keychain, Linux Secret Service).
-- Your AI provider (GitHub, OpenAI or Anthropic) receives only excerpts from sources you have enabled for AI.
+- Your AI provider (GitHub, OpenAI or Anthropic) receives only relevant excerpts from AI-enabled sources: every connected account by default, or only the ones you keep enabled.
 - Relay Desk **never sends email or posts to Slack**. Drafts are saved to your mailbox only when you click Save, and calendar changes happen only after you approve the exact change.
 
 ## Where things live

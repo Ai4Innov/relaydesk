@@ -42,6 +42,7 @@ function deferred<T>() {
 }
 async function setup() {
   const vault = new MemoryVault();
+  vault.put("settings", "preferences", { fullAccessByDefault: false });
   const flags = { paused: false, maintenance: false, epoch: 0 };
   const index = vi.fn(async (_message: Message) => undefined);
   const archive = new BrowserArchive(vault as unknown as Vault, index, vi.fn(), () => flags.paused);

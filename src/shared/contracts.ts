@@ -233,6 +233,8 @@ export interface Settings {
   assistantWorkspaceDir: string;
   assistantShell: "ask" | "off";
   assistantWeb: "ask" | "off";
+  /** New accounts get data access + AI and all discovered sources selected (WhatsApp excepted). */
+  fullAccessByDefault: boolean;
 }
 export interface GmailRelayPublicStatus {
   sourceId: string;

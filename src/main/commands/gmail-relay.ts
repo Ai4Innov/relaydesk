@@ -2,6 +2,7 @@ import type { Account, CommandResult, Source } from "../../shared/contracts";
 import { GMAIL_RELAY_PROVIDER_ID, GMAIL_RELAY_STATUS_PREFIX, type GmailRelaySecret, type GmailRelayState } from "../connectors/gmail-relay";
 import { id as providerId } from "../connectors/core";
 import { normalizeEmail, now, type CommandContext, type CommandOf } from "./context";
+import { fullAccessByDefault } from "../access";
 
 /** Gmail Apps Script relay: validate, connect, rotate token, remove and trigger imports. */
 export async function gmailRelayCommand(ctx: CommandContext, command: CommandOf<"gmailRelay.">): Promise<CommandResult> {
@@ -22,10 +23,11 @@ export async function gmailRelayCommand(ctx: CommandContext, command: CommandOf<
       const existing = vault.get<Account>("accounts", accountId);
       const siblingAi = vault.all<Account>("accounts").some(account => account.provider === "gmail"
         && normalizeEmail(account.email) === mailbox && account.aiEnabled && account.consent && account.status === "connected");
+      const full = fullAccessByDefault(vault);
       const account: Account = { ...(existing ?? { id: accountId, provider: "gmail" as const, name: status.mailbox, email: status.mailbox,
-        status: "connected" as const, aiEnabled: siblingAi, consent: true, connection: "relay" as const }),
+        status: "connected" as const, aiEnabled: siblingAi || full, consent: true, connection: "relay" as const }),
         status: "connected", consent: true, error: undefined,
-        aiEnabled: existing?.aiEnabled ?? siblingAi, connection: existing?.connection ?? "relay" };
+        aiEnabled: existing?.aiEnabled ?? (siblingAi || full), connection: existing?.connection ?? "relay" };
       const sourceId = providerId(account.id, "mail", GMAIL_RELAY_PROVIDER_ID);
       const source: Source = vault.get<Source>("sources", sourceId) ?? {
         id: sourceId, accountId: account.id, providerId: GMAIL_RELAY_PROVIDER_ID, name: "Apps Script relay", kind: "mail", selected: true

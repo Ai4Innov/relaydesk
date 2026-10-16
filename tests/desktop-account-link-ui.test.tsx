@@ -90,7 +90,7 @@ describe.skipIf(!process.env.RELAY_UI_BROWSER_TEST)("desktop account link form i
       ]);
       await browserExpect(page.getByText("Provider page opened in your default browser, not an account connection.", { exact: true })).toBeVisible();
       await browserExpect(page.getByLabel(/I authorize local capture/)).not.toBeChecked();
-      await browserExpect(page.getByLabel("Refresh selected browser pages in the background", { exact: true })).not.toBeChecked();
+      await browserExpect(page.getByLabel("Refresh selected browser pages in the background", { exact: true })).toBeChecked({ checked: defaultSettings.browserBackgroundCapture });
     } finally { await page.close(); }
   }, 30_000);
 

@@ -132,4 +132,4 @@ A packaged Windows application has passed Playwright startup and encrypted-vault
 
 Renderer tests additionally exercise workflows in installed Edge using an injected bridge: navigation, plaintext rendering, draft preservation and local-before-native save ordering, citations, explicit calendar approval, transient credential clearing and responsive layout. This is a distinct test boundary from packaged Electron and live provider access.
 
-Release still requires user-authorized live provider tests, Copilot/model generation, optional model/tool validation, appropriate privacy/compliance review and recovery testing. See README for runtime pins and authentication troubleshooting.
+Release still requires user-authorized live provider tests, Copilot/model generation, optional model/tool validation, appropriate privacy/compliance review and recovery testing. See the [user guide](user-guide.md#platform-setup) for runtime pins and authentication troubleshooting.

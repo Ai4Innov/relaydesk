@@ -5,6 +5,7 @@ import type { Vault } from "../storage/vault";
 import { browserAttachmentsSchema } from "./attachment-schema";
 import { attachmentFormat } from "../attachments/policy";
 import { mailboxDate } from "../../shared/mail-date";
+import { fullAccessByDefault } from "../access";
 
 export const browserAccountId = (email: string, kind: BrowserRegistration["kind"] = "mail") =>
   `browser:${kind === "whatsapp" ? "whatsapp" : "google"}:${email.trim().toLowerCase()}`;
@@ -38,8 +39,9 @@ export class BrowserArchive {
       throw new Error("Invalid WhatsApp account or chat identity.");
     const email = input.accountEmail.trim().toLowerCase(), accountId = browserAccountId(email, input.kind);
     const existing = this.vault.get<Account>("accounts", accountId);
+    const full = !whatsapp && fullAccessByDefault(this.vault);
     const account: Account = existing ?? { id: accountId, provider: whatsapp ? "whatsapp" : "gmail", connection: "browser", email,
-      name: input.accountName || email, consent: !whatsapp, aiEnabled: false, status: "connected" };
+      name: input.accountName || email, consent: !whatsapp, aiEnabled: full, status: "connected" };
     // A disconnected/forgotten account must not be silently re-authorized by an open tab.
     if (this.vault.get("checkpoints", `browser-forgotten:${accountId}`)) throw new Error("This browser account was forgotten. Pair again to authorize discovery.");
     if (existing?.status === "disconnected") throw new Error("This browser account is disconnected. Pair again to reconnect.");
@@ -54,7 +56,7 @@ export class BrowserArchive {
       for (const kind of whatsapp ? [] : ["mail", "calendar"] as const) {
         const id = sourceId(accountId, kind);
         if (!this.vault.get("sources", id)) this.vault.put("sources", id, { id, accountId, providerId: kind, kind,
-          name: kind === "mail" ? "Gmail pages (browser)" : "Calendar & meetings (browser)", selected: false } satisfies Source);
+          name: kind === "mail" ? "Gmail pages (browser)" : "Calendar & meetings (browser)", selected: full } satisfies Source);
       }
     });
     this.changed();

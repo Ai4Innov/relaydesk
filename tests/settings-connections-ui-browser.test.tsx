@@ -67,6 +67,10 @@ describe.skipIf(!process.env.RELAY_UI_BROWSER_TEST)("settings connections", () =
       await browserExpect(providers.getByRole("radio", { name: /GitHub Copilot/ })).toHaveAttribute("aria-checked", "true");
       await providers.getByRole("radio", { name: /Claude \(Anthropic API\)/ }).click();
       await browserExpect.poll(commands).toContainEqual({ type: "ai.provider", provider: "claude" });
+      const fullAccess = page.getByRole("switch", { name: "Full access by default", exact: true });
+      await browserExpect(fullAccess).toHaveAttribute("aria-checked", "true");
+      await fullAccess.click();
+      await browserExpect.poll(commands).toContainEqual({ type: "settings.update", patch: { fullAccessByDefault: false } });
     } finally { await page.close(); }
   }, 60_000);
 });

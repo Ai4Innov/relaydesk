@@ -371,6 +371,8 @@ function Assistant({ data, run, busy }: Props) {
       <div className="settings-heading"><div className="setting-icon"><RefreshCw/></div><div><h2>AI usage</h2><p>Background help and local limits apply to every provider.</p></div></div>
       <div className="setting-row compact"><div><strong>Background AI assistance</strong><p>Prioritize new messages and prepare local drafts for AI-enabled mailboxes.</p></div>
         <Toggle label="Background AI assistance" checked={data.settings.backgroundAi} disabled={busy} onChange={backgroundAi => update({ backgroundAi })}/></div>
+      <div className="setting-row compact"><div><strong>Full access by default</strong><p>New inboxes, channels and calendars are imported and shared with AI as soon as you connect them, with no per-account opt-in. WhatsApp chats stay opt-in. Commands, web requests, calendar changes and sending always still need you.</p></div>
+        <Toggle label="Full access by default" checked={data.settings.fullAccessByDefault} disabled={busy} onChange={fullAccessByDefault => update({ fullAccessByDefault })}/></div>
       <form className="limit-form" onSubmit={event => { event.preventDefault(); update(limits); }}>
         <label>Daily AI run limit<input type="number" min={0} max={1000} required value={limits.dailyAiLimit} onChange={event => setLimits(value => ({ ...value, dailyAiLimit: Number(event.target.value) }))}/></label>
         <label>File approval threshold (MB)<input type="number" min={1} max={10000} required value={limits.attachmentThresholdMb} onChange={event => setLimits(value => ({ ...value, attachmentThresholdMb: Number(event.target.value) }))}/></label>

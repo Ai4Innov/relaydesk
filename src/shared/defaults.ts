@@ -7,13 +7,13 @@ export const defaultSettings: Settings = {
   dailyAiLimit: 20,
   aiRunsToday: 0,
   aiUsageDate: new Date().toISOString().slice(0, 10),
-  backgroundAi: false,
+  backgroundAi: true,
   syncPaused: false,
   startAtLogin: false,
   closeToTray: true,
   notifications: false,
   refreshIntervalSeconds: 60,
-  browserBackgroundCapture: false,
+  browserBackgroundCapture: true,
   browserFullMailDownload: true,
   browserAttachmentDownload: true,
   playwrightMailEnabled: false,
@@ -27,5 +27,6 @@ export const defaultSettings: Settings = {
   assistantTools: true,
   assistantWorkspaceDir: "",
   assistantShell: "ask",
-  assistantWeb: "ask"
+  assistantWeb: "ask",
+  fullAccessByDefault: true
 };
