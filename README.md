@@ -26,7 +26,7 @@ Relay Desk reads your Gmail, Outlook, Slack, WhatsApp and calendars into an encr
 flowchart TB
     subgraph T["In a terminal · one time, about 3 minutes"]
         direction LR
-        A["1 · Install<br/>Node.js 24 + Git"] --> B["2 · Sign in to your AI<br/>copilot, then /login"] --> C["3 · Start Relay Desk<br/>npm install, npm start"]
+        A["1 · Install for your OS<br/>Node.js 24 + Git (+ keyring on Linux)"] --> B["2 · Sign in to your AI<br/>copilot, then /login"] --> C["3 · Start Relay Desk<br/>npm install, npm start"]
     end
     subgraph P["In the app · the checklist ticks itself off"]
         direction LR
@@ -44,7 +44,51 @@ Each checklist step ticks itself off when the app detects it is done. Thanks to 
 
 You need [Node.js 24](https://nodejs.org/) (`^24.13.0`), Git, and **one** AI provider. The commands below use GitHub Copilot; [Codex and Claude](#ai-providers) work too.
 
-**1. Sign in to your AI (one time)**
+**0. Install the prerequisites for your OS** (skip what you already have; check with `node -v` and `git --version`)
+
+<details open>
+<summary><strong>🪟 Windows 10/11</strong> (PowerShell)</summary>
+
+```powershell
+winget install --id Git.Git -e
+# Node.js 24: run the official "Windows Installer (.msi)" from https://nodejs.org/en/download
+# then open a NEW PowerShell window so node, npm and git are on PATH.
+# If PowerShell says "running scripts is disabled", allow npm's scripts once:
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+Use the official Node.js build. MSYS2, Cygwin and WSL-from-Windows Node builds can't load the native modules. No keyring setup is needed: the archive key uses Windows DPAPI.
+</details>
+
+<details>
+<summary><strong>🍎 macOS 13+</strong> (Terminal, Apple silicon or Intel)</summary>
+
+```bash
+xcode-select --install          # Git and build tools
+# Node.js 24: run the official macOS Installer (.pkg) from https://nodejs.org/en/download
+# or, with Homebrew:
+brew install node@24 && brew link --overwrite --force node@24
+```
+
+On first launch macOS may ask for Keychain access to protect the archive key. Choose **Always Allow**.
+</details>
+
+<details>
+<summary><strong>🐧 Linux</strong> (Ubuntu 22.04+, Debian 12+, Fedora 39+)</summary>
+
+```bash
+# Git, build tools and a Secret Service keyring (required; there is no plaintext fallback)
+sudo apt install -y git build-essential python3 gnome-keyring libsecret-1-0      # Debian/Ubuntu
+# sudo dnf install -y git gcc-c++ make python3 gnome-keyring libsecret           # Fedora
+# Node.js 24 via nvm, so global npm installs don't need sudo
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.8/install.sh | bash
+source ~/.nvm/nvm.sh && nvm install 24
+```
+
+KDE users can use KWallet instead of GNOME Keyring. The keyring must be unlocked in your desktop session (it normally unlocks at login).
+</details>
+
+**1. Sign in to your AI (one time)**. These commands are the same on every OS.
 
 ```bash
 npm install -g @github/copilot

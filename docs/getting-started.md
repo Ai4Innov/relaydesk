@@ -28,11 +28,13 @@ You need three things on every platform: **Node.js 24** (`^24.13.0`), **Git**, a
 <details open>
 <summary><strong>Windows 10/11 (x64)</strong></summary>
 
-1. Install the official [Node.js 24 Windows x64 installer](https://nodejs.org/). MSYS/Cygwin Node builds are not supported because the SDK's native bindings crash under them.
-2. Install [Git for Windows](https://git-scm.com/download/win).
+1. Install the official [Node.js 24 Windows x64 installer](https://nodejs.org/en/download). MSYS/Cygwin Node builds are not supported because the SDK's native bindings crash under them.
+2. Install [Git for Windows](https://git-scm.com/download/win), or run `winget install --id Git.Git -e`. Then open a **new** PowerShell window.
 3. In PowerShell:
 
    ```powershell
+   # Only if PowerShell reports "running scripts is disabled on this system":
+   Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
    npm install -g @github/copilot
    copilot          # then type /login and follow the browser prompt
    ```
@@ -43,7 +45,7 @@ The archive key is protected with Windows DPAPI. No extra setup is needed.
 <details>
 <summary><strong>macOS 13+ (Apple silicon or Intel)</strong></summary>
 
-1. Install Node.js 24 from [nodejs.org](https://nodejs.org/) or with Homebrew: `brew install node@24`.
+1. Install Node.js 24 from [nodejs.org](https://nodejs.org/en/download) or with Homebrew: `brew install node@24 && brew link --overwrite --force node@24` (Homebrew doesn't put `node@24` on PATH unless you link it).
 2. Install the Xcode command-line tools: `xcode-select --install`. They provide Git, and the compiler is used only if a native module has no prebuilt binary.
 3. In Terminal:
 
