@@ -1,6 +1,6 @@
-import { Worker } from "node:worker_threads";
+import { fork } from "node:child_process";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { freemem } from "node:os";
 import type { Attachment, Collection } from "../../shared/contracts";
 import { approvalLimit, approvalReason, attachmentFormat } from "./policy";
@@ -152,14 +152,16 @@ export class AttachmentProcessor {
     // Never fall back to cwd: a packaged app can be started from an untrusted folder.
     const workerPath = this.options.workerPath ?? bundled;
     if (!existsSync(workerPath)) throw new PipelineError("blocked", "The packaged attachment worker is missing. Repair the Relay Desk installation.");
+    const hostPath = join(dirname(workerPath), "attachment-host.cjs");
+    if (!existsSync(hostPath)) throw new PipelineError("blocked", "The packaged attachment worker host is missing. Repair the Relay Desk installation.");
     return new Promise((resolve, reject) => {
-      const data = Uint8Array.from(bytes);
-      const worker = new Worker(workerPath, {
-        workerData: { bytes: data, attachment: { name: attachment.name, mimeType: attachment.mimeType }, approved, modelDirectory: this.options.modelDirectory },
-        transferList: [data.buffer],
-        resourceLimits: { maxOldGenerationSizeMb: 384, maxYoungGenerationSizeMb: 32, stackSizeMb: 8 },
+      // Parse in a disposable child process (Node mode of this same executable), not an
+      // in-process thread: a crash in a native parser addon must not close the app.
+      const child = fork(hostPath, [], {
+        execPath: process.execPath, serialization: "advanced", stdio: ["ignore", "ignore", "ignore", "ipc"], windowsHide: true,
         // Do not forward provider credentials or other ambient application secrets.
         env: {
+          ELECTRON_RUN_AS_NODE: "1",
           PATH: process.env.PATH ?? "", SystemRoot: process.env.SystemRoot ?? "",
           RELAY_WHISPER_CPP_PATH: process.env.RELAY_WHISPER_CPP_PATH ?? "",
           RELAY_FFMPEG_PATH: process.env.RELAY_FFMPEG_PATH ?? "",
@@ -170,17 +172,27 @@ export class AttachmentProcessor {
         if (settled) return;
         settled = true;
         signal.removeEventListener("abort", abort);
-        worker.postMessage("cancel");
-        // Give the worker an event-loop turn to stop its explicitly configured media child.
-        const termination = setTimeout(() => { void worker.terminate(); }, 100);
+        if (child.connected) child.send("cancel", () => {});
+        // Give the host an event-loop turn to stop its explicitly configured media child.
+        const termination = setTimeout(() => { if (child.exitCode === null) child.kill(); }, 200);
         termination.unref();
         if (error) reject(error); else resolve(result!);
       };
       const abort = () => finish(signal.reason instanceof Error ? signal.reason : new PipelineError("cancelled", "Attachment processing cancelled."));
       signal.addEventListener("abort", abort, { once: true });
-      worker.once("message", result => finish(undefined, result as Extraction));
-      worker.once("error", () => finish(new PipelineError("blocked", "The isolated parser failed or exceeded its memory budget. Original retained encrypted.")));
-      worker.once("exit", () => { if (!settled) finish(new PipelineError("failed", "The isolated parser exited without an extraction result.")); });
+      child.on("message", (reply: { type: string; result?: Extraction }) => {
+        if (reply?.type === "result") finish(undefined, reply.result);
+        else if (reply?.type === "error") finish(new PipelineError("blocked", "The isolated parser failed or exceeded its memory budget. Original retained encrypted."));
+        else finish(new PipelineError("failed", "The isolated parser exited without an extraction result."));
+      });
+      child.once("error", () => finish(new PipelineError("failed", "The isolated parser process could not start.")));
+      // "close" follows delivery of every IPC message, unlike "exit".
+      child.once("close", () => finish(new PipelineError("failed", "The isolated parser exited without an extraction result.")));
+      child.send({
+        workerPath,
+        workerData: { bytes, attachment: { name: attachment.name, mimeType: attachment.mimeType }, approved, modelDirectory: this.options.modelDirectory },
+        resourceLimits: { maxOldGenerationSizeMb: 384, maxYoungGenerationSizeMb: 32, stackSizeMb: 8 },
+      }, error => { if (error) finish(new PipelineError("failed", "The isolated parser process could not receive the attachment.")); });
       if (signal.aborted) abort();
     });
   }

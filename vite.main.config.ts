@@ -9,6 +9,7 @@ export default defineConfig({
     name: "relay-attachment-worker",
     generateBundle() {
       this.emitFile({ type: "asset", fileName: "attachment-worker.cjs", source: readFileSync("src/main/attachments/attachment-worker.cjs", "utf8") });
+      this.emitFile({ type: "asset", fileName: "attachment-host.cjs", source: readFileSync("src/main/attachments/attachment-host.cjs", "utf8") });
       for (const name of readdirSync("browser-extension"))
         if (/\.(json|js|html|css)$/.test(name))
           this.emitFile({ type: "asset", fileName: `browser-extension/${name}`, source: readFileSync(join("browser-extension", name)) });

@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 import { deflateRawSync } from "node:zlib";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
+import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import ExcelJS from "exceljs";
 import { AttachmentProcessor } from "../src/main/attachments";
 import type { Attachment, Collection } from "../src/shared/contracts";
@@ -209,6 +211,22 @@ describe("attachment approval and lifecycle", () => {
     expect(test.attachment().status).toBe("blocked");
     expect(test.attachment().reason).toContain("packaged attachment worker");
     expect(test.text()).toBe("");
+  });
+  it("survives a parser that crashes its whole process natively", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "relay-crashing-parser-"));
+    try {
+      copyFileSync(resolve("src", "main", "attachments", "attachment-host.cjs"), join(directory, "attachment-host.cjs"));
+      writeFileSync(join(directory, "attachment-worker.cjs"), "process.kill(process.pid, \"SIGKILL\");\n");
+      const test = fixture(Buffer.from("text"));
+      const processor = new AttachmentProcessor(test.vault, test.retrieval, test.download, {
+        modelDirectory: resolve("tests", "uninstalled-attachment-models"), thresholdMb: () => 25,
+        workerPath: join(directory, "attachment-worker.cjs"),
+      });
+      await processor.process(test.attachment().id, false);
+      expect(test.attachment().status).toBe("failed");
+      expect(test.attachment().reason).toContain("isolated parser");
+      expect(test.text()).toBe("");
+    } finally { rmSync(directory, { recursive: true, force: true }); }
   });
 });
 
