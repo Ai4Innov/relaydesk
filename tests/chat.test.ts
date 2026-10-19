@@ -67,7 +67,7 @@ function fixture() {
 }
 
 describe("chat agent tools, consent and encrypted checkpoint state", () => {
-  it.each([false, true])("only invalidates recaptured email evidence when content changes: %s", async changed => {
+  it.each([false, true])("keeps the answer and flags recaptured email evidence only when content changes: %s", async changed => {
     const f = fixture();
     const message: Message = { ...f.message,
       browser: { completeness: "full", capturedAt: "2026-09-25T14:00:00Z", dateText: "" } };
@@ -80,8 +80,9 @@ describe("chat agent tools, consent and encrypted checkpoint state", () => {
       return { answer: "The current email requests a review.", citationIds: [recent.messages[0].citation.id] };
     });
     await f.send();
-    expect(f.last().status).toBe(changed ? "error" : "complete");
-    expect(f.last().text).toContain(changed ? "evidence changed" : "requests a review");
+    expect(f.last().status).toBe("complete");
+    expect(f.last().text).toContain("requests a review");
+    expect(f.last().text.includes("Some sources were updated")).toBe(changed);
   });
   it("does not publish a claimed latest-inbox answer without any actual freshness attempt", async () => {
     const f = fixture();
@@ -391,10 +392,11 @@ describe("chat agent tools, consent and encrypted checkpoint state", () => {
     f.hooks.generate.mockImplementation(async request => {
       expect((await call(request.tools, "read_message", { messageId: preview.id })).fullMessageIds).toEqual(["full"]);
       f.vault.put("messages", full.id, { ...full, revision: "changed", body: "Changed after read" });
-      return { answer: "Must not accept changed evidence.", citationIds: [] };
+      return { answer: "Answer from the evidence read.", citationIds: [] };
     });
     await f.send();
-    expect(f.last().status).toBe("error");
+    expect(f.last().status).toBe("complete");
+    expect(f.last().text).toContain("Some sources were updated");
     expect(f.vault.get<Message>("messages", preview.id)?.revision).toBe(preview.revision);
   });
 
@@ -826,6 +828,21 @@ describe("persisted one-shot chat action approvals", () => {
     await expect(f.confirm()).rejects.toThrow("changed");
     expect(f.hooks.execute).not.toHaveBeenCalled();
     expect(f.last().actions[0].status).toBe("failed");
+  });
+  it("keeps a read-only answer but voids a proposal when its sources change mid-request", async () => {
+    const f = fixture();
+    f.hooks.generate.mockImplementation(async request => {
+      await call(request.tools, "propose_draft_generate", { messageId: "m1", instruction: "Thank them" });
+      f.vault.put("messages", "m1", { ...f.message, revision: "r2" });
+      return { answer: "Here is the overview.", citationIds: [] };
+    });
+    await f.send();
+    expect(f.last().status).toBe("complete");
+    expect(f.last().text).toContain("Here is the overview.");
+    expect(f.last().text).toContain("Some sources were updated");
+    expect(f.last().actions[0].status).toBe("failed");
+    await expect(f.confirm()).rejects.toThrow();
+    expect(f.hooks.execute).not.toHaveBeenCalled();
   });
   it("does not claim success when an approved app command fails", async () => {
     const f = fixture();

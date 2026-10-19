@@ -272,7 +272,9 @@ export class ChatService {
     this.active?.controller.signal.throwIfAborted();
     if (this.stopped) throw new Error("Chat is stopped.");
     if (this.active && this.permissions() !== this.active.permissions) throw new Error("Source permissions changed during this chat. Start a new request.");
-    if (!turn.evidence.every(ref => this.valid(ref, true))) throw new Error("Evidence changed during this chat. Start a new request.");
+    // Content updates (new mail, attachment processing, background review) do not invalidate a
+    // read-only answer; every write re-checks exact revisions in its own action guards.
+    if (!turn.evidence.every(ref => this.valid(ref))) throw new Error("Evidence is no longer permitted.");
   }
   permissionsChanged(): void {
     if (this.active && this.permissions() !== this.active.permissions) this.active.controller.abort();
@@ -463,11 +465,15 @@ export class ChatService {
         return;
       }
       const incomplete = turn.mailFreshness?.filter(result => result.status !== "fresh") ?? [];
-      const warning = incomplete.length
+      const sourcesChanged = !turn.evidence.every(ref => this.valid(ref, true));
+      if (sourcesChanged) this.failPending(turn, "Sources changed while this answer was prepared. Ask again to propose this action from the current version.");
+      const warning = (sourcesChanged
+        ? "**Some sources were updated while I was answering** (for example new mail or a finished attachment). The answer below reflects what I read; ask again for the very latest.\n\n" : "")
+        + (incomplete.length
         ? "**Live inbox refresh is incomplete.** The answer below may use older or partially downloaded emails; it is not a verified latest-inbox summary.\n\n"
           + [...new Set(incomplete.flatMap(result => result.sources.filter(source => source.status !== "fresh")
             .map(source => source.reason).filter((reason): reason is string => !!reason)))].slice(0, 3).join(" ") + "\n\n"
-        : "";
+        : "");
       turn.text = warning + result.answer; turn.status = "complete";
     } catch (error) {
       // Never persist SDK errors or tool arguments: they can contain private source text.
