@@ -34,7 +34,9 @@ export function chatFailureMessage(error: unknown): string {
   if (error instanceof SyntaxError) return "The AI provider returned invalid response JSON. Try a shorter request; no pending action was executed.";
   if (error instanceof z.ZodError) return "The AI provider returned an unsupported response format. Regenerate the response; no pending action was executed.";
   const message = error instanceof Error ? error.message : "";
-  if (/Evidence changed|Source permissions changed|Evidence is no longer permitted/i.test(message))
+  if (/Source permissions changed|Evidence is no longer permitted/i.test(message))
+    return "AI access to an account or source used in this conversation changed. Check Settings → Connections, then start a new conversation. No pending action was executed.";
+  if (/Evidence changed/i.test(message))
     return "Calendar or message evidence changed while the assistant was working. Please retry with the refreshed sources. No pending action was executed.";
   if (/cited evidence it did not read/i.test(message))
     return "The AI provider returned an unverified citation. Regenerate the response; no pending action was executed.";
@@ -272,9 +274,10 @@ export class ChatService {
     this.active?.controller.signal.throwIfAborted();
     if (this.stopped) throw new Error("Chat is stopped.");
     if (this.active && this.permissions() !== this.active.permissions) throw new Error("Source permissions changed during this chat. Start a new request.");
-    // Content updates (new mail, attachment processing, background review) do not invalidate a
-    // read-only answer; every write re-checks exact revisions in its own action guards.
-    if (!turn.evidence.every(ref => this.valid(ref))) throw new Error("Evidence is no longer permitted.");
+    // Content updates (new mail, attachment processing, background review replacing suggested
+    // tasks) do not invalidate a read-only answer; only consent/permission loss does. Every
+    // write re-checks exact revisions and existence in its own action guards.
+    if (!turn.evidence.every(ref => this.disclosable(ref))) throw new Error("Evidence is no longer permitted.");
   }
   permissionsChanged(): void {
     if (this.active && this.permissions() !== this.active.permissions) this.active.controller.abort();
@@ -465,7 +468,7 @@ export class ChatService {
         return;
       }
       const incomplete = turn.mailFreshness?.filter(result => result.status !== "fresh") ?? [];
-      const sourcesChanged = !turn.evidence.every(ref => this.valid(ref, true));
+      const sourcesChanged = turn.evidence.some(ref => ref.revision !== undefined && !this.valid(ref, true));
       if (sourcesChanged) this.failPending(turn, "Sources changed while this answer was prepared. Ask again to propose this action from the current version.");
       const warning = (sourcesChanged
         ? "**Some sources were updated while I was answering** (for example new mail or a finished attachment). The answer below reflects what I read; ask again for the very latest.\n\n" : "")

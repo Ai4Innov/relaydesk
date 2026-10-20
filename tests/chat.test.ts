@@ -712,6 +712,26 @@ describe("chat agent tools, consent and encrypted checkpoint state", () => {
     f.vault.put("accounts", "other", { ...f.account, id: "other", aiEnabled: false });
     expect(JSON.stringify(f.chat.snapshot())).not.toContain("permitted count is two");
   });
+  it("answers a follow-up with another model after a task cited earlier was replaced", async () => {
+    const f = fixture();
+    const derived = { id: "derived", origin: "action" as const, title: "Reply", notes: "", status: "open" as const, priority: "high" as const,
+      createdAt: "", updatedAt: "", citations: [], sourceAccountId: "allowed", sourceSourceId: "mail", sourceMessageId: "m1" };
+    f.workspace.tasks = [derived];
+    f.vault.put("tasks", derived.id, derived);
+    f.hooks.generate.mockImplementationOnce(async request => {
+      await call(request.tools, "list_tasks", { limit: 5 });
+      return { answer: "First overview.", citationIds: [] };
+    });
+    const conversationId = await f.send();
+    // A background review replaces suggested tasks between turns.
+    f.vault.records.delete("tasks|derived");
+    f.workspace.tasks = [];
+    f.hooks.settings().model = "another-model";
+    f.hooks.generate.mockResolvedValueOnce({ answer: "Follow-up answer.", citationIds: [] });
+    await f.send("continue", conversationId);
+    expect(f.last().status).toBe("complete");
+    expect(f.last().text).toBe("Follow-up answer.");
+  });
   it("withholds an oversized tool page without failing the answer and keeps status tools free of client credentials", async () => {
     const f = fixture();
     f.hooks.settings().googleClientId = "private-client-setting";
