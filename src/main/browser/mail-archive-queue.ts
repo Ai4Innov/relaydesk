@@ -36,11 +36,22 @@ export class BrowserMailArchiveQueue {
   private revision = 0;
   private clock: () => number;
 
+  private memo?: { generation: number; at: number; threads: Thread[] };
+
   constructor(private vault: MailVault, private reader: BrowserMailReader | undefined, private hooks: Hooks) {
     this.clock = hooks.now ?? Date.now;
   }
 
   private threads(): Thread[] {
+    // Rescanning the whole archive every second dominated main-process CPU; reuse it until the vault changes.
+    const generation = (this.vault as { generation?: number }).generation;
+    if (generation !== undefined && this.memo?.generation === generation && Date.now() - this.memo.at < 15_000) return this.memo.threads;
+    const threads = this.scan();
+    if (generation !== undefined) this.memo = { generation, at: Date.now(), threads };
+    return threads;
+  }
+
+  private scan(): Thread[] {
     const accounts = new Set(this.vault.all<Account>("accounts").filter(account => account.provider === "gmail"
       && account.connection === "browser" && account.consent && account.status === "connected" && !account.demo).map(account => account.id));
     const sources = new Map(this.vault.all<Source>("sources").filter(source =>
@@ -86,7 +97,7 @@ export class BrowserMailArchiveQueue {
   }
 
   /** Invalidate an in-flight automatic read without cancelling unrelated foreground reads. */
-  permissionsChanged(): void { this.revision++; }
+  permissionsChanged(): void { this.revision++; this.memo = undefined; }
 
   retry(): void {
     for (const thread of this.threads()) {

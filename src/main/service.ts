@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { join } from "node:path";
+import { isAbsolute, join, parse, sep } from "node:path";
 import { mkdir } from "node:fs/promises";
 import type { Account, ActionItem, Approval, Attachment, CalendarEvent, Citation, Command, CommandResult, Draft, Job, Message, Settings, Snapshot, Source } from "../shared/contracts";
 import { defaultSettings } from "../shared/defaults";
@@ -7,7 +7,8 @@ import { Vault } from "./storage/vault";
 import { Retrieval } from "./retrieval";
 import { ConnectorHub } from "./connectors";
 import { GMAIL_RELAY_PROVIDER_ID } from "./connectors/gmail-relay";
-import { AttachmentProcessor } from "./attachments";
+import { AttachmentProcessor, extractIsolated } from "./attachments";
+import { KnowledgeLibrary } from "./knowledge";
 import { browserAttachmentGuard, importBrowserAttachment, processRetainedBrowserAttachment } from "./attachments/browser-import";
 import { attachmentViewGuard, saveAttachment, viewAttachment } from "./attachments/viewing";
 import { CopilotAdapter } from "./copilot";
@@ -79,6 +80,7 @@ export class RelayService {
   readonly attachments: AttachmentProcessor;
   readonly productivity: ProductivityService;
   readonly chat: ChatService;
+  readonly knowledge: KnowledgeLibrary;
   private controllers = new Map<string, AbortController>();
   private activeJobs = new Set<string>();
   private timer?: ReturnType<typeof setInterval>;
@@ -121,6 +123,13 @@ export class RelayService {
       },
       { modelDirectory: join(directory, "models"), thresholdMb: () => this.settings().attachmentThresholdMb, autoApprove: () => this.settings().autoApprove }
     );
+    this.knowledge = new KnowledgeLibrary(vault, {
+      changed: host.changed,
+      paused: () => this.stopped || this.restoring || this.settings().syncPaused,
+      // Images/media are skipped by folder indexing, so OCR/transcription never runs implicitly here.
+      extract: (bytes, file, signal) => extractIsolated(bytes, file, { approved: true, modelDirectory: join(directory, "models") },
+        AbortSignal.any([signal, AbortSignal.timeout(5 * 60_000)]))
+    });
     this.productivity = new ProductivityService(vault, {
       changed: host.changed,
       canReview: () => {
@@ -171,6 +180,7 @@ export class RelayService {
       refreshMail: request => this.refreshMail(request),
       generate: request => this.runAi(() => this.ai.chat(request)),
       workspaceDirectory: () => this.assistantWorkspace(),
+      knowledge: this.knowledge,
       openPath: async (path, reveal) => {
         if (!this.host.openPath) throw new Error("Opening files requires the desktop application.");
         await this.host.openPath(path, reveal);
@@ -377,6 +387,7 @@ export class RelayService {
       if (!this.stopped && !this.restoring) {
         this.browserDownloads.tick();
         this.mailArchive.tick();
+        this.knowledge.syncDue();
       }
       if (this.settings().syncPaused || this.stopped || this.restoring) return;
       void this.processPendingAttachments().catch(() => { /* Individual attachment failures are recorded by runJob. */ });
@@ -420,15 +431,38 @@ export class RelayService {
     }
     return settings;
   }
+  /**
+   * The snapshot sent to the window. Formatted email HTML (most of the payload) is loaded on demand
+   * and evidence excerpts are shortened for display; AI tools keep using the complete snapshot().
+   */
+  rendererSnapshot(): Snapshot {
+    const snapshot = this.snapshot();
+    const EXCERPT = 600;
+    const shorten = (citations: Citation[]) => citations.some(citation => (citation.excerpt?.length ?? 0) > EXCERPT)
+      ? citations.map(citation => (citation.excerpt?.length ?? 0) > EXCERPT ? { ...citation, excerpt: `${citation.excerpt!.slice(0, EXCERPT)}…` } : citation)
+      : citations;
+    return {
+      ...snapshot,
+      messages: snapshot.messages.map(message => message.html ? { ...message, html: undefined, htmlOmitted: true } : message),
+      actions: snapshot.actions.map(action => ({ ...action, citations: shorten(action.citations) })),
+      tasks: snapshot.tasks?.map(task => ({ ...task, citations: shorten(task.citations) }))
+    };
+  }
+
   snapshot(): Snapshot {
     const accounts = this.vault.all<Account>("accounts");
     const messages = this.vault.listMessages(500).filter(message => mailOriginAllowed(this.vault, message));
+    const loaded = new Map<string, Message | undefined>();
+    const lookup = (id: string) => {
+      if (!loaded.has(id)) loaded.set(id, this.vault.get<Message>("messages", id));
+      return loaded.get(id);
+    };
     const attachments = this.vault.all<Attachment>("attachments").filter(attachment => {
-      const parent = this.vault.get<Message>("messages", attachment.messageId);
+      const parent = lookup(attachment.messageId);
       return parent ? mailOriginAllowed(this.vault, parent)
         && mailOriginAllowed(this.vault, { ...parent, gmailApi: attachment.gmailApi }) : !attachment.gmailApi;
     }).map(attachment => {
-      const parent = this.vault.get<Message>("messages", attachment.messageId);
+      const parent = lookup(attachment.messageId);
       const parentAvailable = !!parent && !parent.deleted && parent.accountId === attachment.accountId;
       return { ...attachment, parentAvailable, sourceId: parentAvailable ? parent?.sourceId : undefined };
     });
@@ -436,7 +470,7 @@ export class RelayService {
     const settings = this.settings();
     this.wakeReminders();
     const visibleMessage = (messageId: string) => {
-      const message = this.vault.get<Message>("messages", messageId);
+      const message = lookup(messageId);
       return !!message && mailOriginAllowed(this.vault, message);
     };
     const actions = this.vault.all<ActionItem>("actions").filter(action => visibleMessage(action.messageId));
@@ -456,22 +490,29 @@ export class RelayService {
           message: "Gmail transport is unavailable in this installation." }),
       playwrightMail: this.playwrightMail?.status(),
       fullMailArchive: this.mailArchive.status(),
+      knowledge: this.knowledge.sources(),
       browserItems: this.vault.all<BrowserCalendarItem>("browserItems").filter(item =>
         accounts.some(account => account.id === item.accountId && account.consent && account.status === "connected") &&
         this.vault.get<Source>("sources", item.sourceId)?.selected)
     };
     return { ...source, ...this.productivity.snapshot(source), chat: this.chat.snapshot() };
   }
+  private reminderScan?: { generation: number; next: number };
   private wakeReminders(): void {
-    let awakened = false;
+    const generation = this.vault.generation;
+    if (generation !== undefined && this.reminderScan?.generation === generation && Date.now() < this.reminderScan.next) return;
+    let awakened = false, earliest = Infinity;
     for (const action of this.vault.all<ActionItem>("actions")) {
-      if (action.status === "snoozed" && action.snoozedUntil && Date.parse(action.snoozedUntil) <= Date.now()) {
+      if (action.status !== "snoozed" || !action.snoozedUntil) continue;
+      const until = Date.parse(action.snoozedUntil);
+      if (until <= Date.now()) {
         const next: ActionItem = { ...action, status: "open", snoozedUntil: undefined };
         this.vault.put("actions", action.id, next);
         this.productivity.syncActionStatus(next, true);
         awakened = true;
-      }
+      } else if (until < earliest) earliest = until;
     }
+    this.reminderScan = { generation: this.vault.generation, next: earliest };
     if (awakened) {
       this.host.changed();
       if (this.settings().notifications) this.host.notify("Relay Desk", "A snoozed action is ready for review.");
@@ -574,8 +615,11 @@ export class RelayService {
     if (this.attachmentController?.accountId === accountId || this.attachmentController?.linkedAccountId === accountId)
       this.attachmentController.controller.abort();
   }
+  private idleAttachmentScan?: number;
   private async processPendingAttachments(): Promise<void> {
     if (this.attachmentBusy || this.browserDownloads.running || this.settings().syncPaused || this.stopped) return;
+    if (this.idleAttachmentScan !== undefined && this.idleAttachmentScan === this.vault.generation) return;
+    const generation = this.vault.generation;
     const eligible = this.vault.all<Attachment>("attachments").filter(attachment => {
       const account = this.vault.get<Account>("accounts", attachment.accountId);
       const message = this.vault.get<Message>("messages", attachment.messageId);
@@ -587,6 +631,7 @@ export class RelayService {
         && mailOriginAllowed(this.vault, { ...message, gmailApi: attachment.gmailApi })
         && this.vault.get<Source>("sources", message.sourceId)?.selected;
     }).slice(0, 3);
+    if (!eligible.length) { this.idleAttachmentScan = generation; return; }
     for (const attachment of eligible) {
       if (this.stopped || this.browserDownloads.running || this.settings().syncPaused) break;
       await this.command({ type: "attachment.process", attachmentId: attachment.id, approved: this.settings().autoApprove });
@@ -1024,10 +1069,42 @@ export class RelayService {
         if (!this.host.chooseFolder) throw new Error("Choosing folders requires the desktop application.");
         const chosen = await this.host.chooseFolder("Choose the assistant workspace folder", this.assistantWorkspace());
         if (!chosen) return { message: "Workspace folder unchanged." };
-        if (!/^[A-Za-z]:\\/.test(chosen) || /^[A-Za-z]:\\?$/.test(chosen)) throw new Error("Choose a folder, not a drive root.");
+        if (!isAbsolute(chosen) || parse(chosen).root === chosen || parse(chosen).root === `${chosen}${sep}`) throw new Error("Choose a folder, not a drive root.");
         this.vault.put("settings", "preferences", { ...this.settings(), assistantWorkspaceDir: chosen });
         this.host.changed();
         return { message: `Assistant workspace set to ${chosen}.` };
+      }
+      case "knowledge.folder.add": {
+        if (!this.host.chooseFolder) throw new Error("Choosing folders requires the desktop application.");
+        const chosen = await this.host.chooseFolder("Choose a folder for the assistant to read", this.host.documentsDirectory ?? homedir());
+        if (!chosen) return { message: "No folder added." };
+        if (!isAbsolute(chosen) || parse(chosen).root === chosen) throw new Error("Choose a folder, not a whole drive.");
+        const source = this.knowledge.addFolder(chosen, command.name);
+        void this.knowledge.sync(source.id).catch(() => {});
+        return { message: `Added ${source.name}. Indexing its documents in the background.` };
+      }
+      case "knowledge.link.add": {
+        const source = this.knowledge.addLink(command.url, command.name);
+        void this.knowledge.sync(source.id).catch(() => {});
+        return { message: "Shared link added. Downloading and indexing its files in the background." };
+      }
+      case "knowledge.sync":
+        void this.knowledge.sync(command.sourceId).catch(() => {});
+        return { message: "Sync started." };
+      case "knowledge.update":
+        this.knowledge.update(command.sourceId, { aiEnabled: command.aiEnabled, name: command.name });
+        return { message: command.aiEnabled === false ? "The assistant can no longer read this source." : "Source updated." };
+      case "knowledge.remove":
+        this.knowledge.remove(command.sourceId);
+        return { message: "Removed. Its extracted text was deleted from the local archive; the original files were not touched." };
+      case "knowledge.open": {
+        const source = this.knowledge.sources().find(item => item.id === command.sourceId);
+        if (!source) throw new Error("This folder or link was removed.");
+        if (source.kind === "folder") {
+          if (!this.host.openPath) throw new Error("Opening folders requires the desktop application.");
+          await this.host.openPath(source.location, false);
+        } else await this.host.openExternal(source.location);
+        return {};
       }
       case "settings.update": {
         const previous = this.settings(), next = { ...previous, ...command.patch };
@@ -1314,6 +1391,13 @@ export class RelayService {
           : this.settings().syncPaused ? "Full email retries queued. Resume synchronization to download them."
           : "Full email download requested for captured conversations in selected Gmail sources. Failures will retry with backoff." };
       }
+      case "message.html": {
+        const message = this.message(command.messageId);
+        const account = this.account(message.accountId);
+        this.selectedSource(message.sourceId, account.id);
+        if (!mailOriginAllowed(this.vault, message)) throw new Error("This message is not available.");
+        return { html: message.html };
+      }
       case "message.load": {
         const message = this.message(command.messageId);
         const account = this.account(message.accountId);
@@ -1433,6 +1517,7 @@ export class RelayService {
   async stop(): Promise<void> {
     await this.playwrightMail?.close();
     this.stopped = true;
+    this.knowledge.cancelAll();
     this.browserDownloads.permissionsChanged();
     this.productivity.pauseReview();
     await this.browser?.stop();

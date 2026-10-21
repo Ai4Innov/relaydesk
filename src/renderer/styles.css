@@ -50,3 +50,14 @@
 .provider-option:hover:not(:disabled){border-color:var(--teal)}
 .provider-option.active{border-color:var(--teal);background:#eef7f4;box-shadow:inset 0 0 0 1px var(--teal)}
 .provider-option:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+
+/* Folders & shared links */
+.knowledge-card{display:grid;gap:8px;margin-bottom:10px}
+.knowledge-row{display:flex;align-items:center;gap:10px;min-width:0}
+.knowledge-main{display:grid;min-width:0;flex:1}
+.knowledge-main small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted,#667)}
+.knowledge-ai{display:inline-flex;align-items:center;gap:6px;font-size:12px}
+.knowledge-confirm{display:inline-flex;align-items:center;gap:6px;font-size:13px;flex-wrap:wrap}
+.knowledge-add{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:6px}
+.knowledge-link{display:flex;gap:8px;flex:1;min-width:280px}
+.knowledge-link input{flex:1;min-width:0}

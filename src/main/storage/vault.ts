@@ -106,6 +106,7 @@ export class Vault {
       db.pragma("foreign_keys=ON");
       db.pragma("secure_delete=ON");
       db.pragma("temp_store=MEMORY");
+      db.pragma("cache_size=-65536");
       db.pragma("busy_timeout=5000");
       return db;
     } catch (error) { db.close(); throw new Error("Cannot open encrypted archive with the protected key.", { cause: error }); }
@@ -163,7 +164,25 @@ export class Vault {
     if (this.busy) throw new Error("Archive maintenance is in progress; retry this operation.");
     if (!this.db.open) throw new Error("The archive is closed.");
   }
+  /** Incremented on every record mutation so callers can memoize derived scans. */
+  get generation(): number { return this.writes; }
+  private writes = 0;
+  /** Write-through cache of serialized records (rowid order). Reads avoid re-decrypting SQLCipher pages. */
+  private cache = new Map<Collection, Map<string, string>>();
+  private cached(collection: Collection): Map<string, string> | undefined {
+    if (collection === "secrets" || collection === "documents") return undefined;
+    let rows = this.cache.get(collection);
+    if (!rows) {
+      rows = new Map((this.statement("SELECT id,value FROM records WHERE collection=? ORDER BY rowid").all(collection) as { id: string; value: string }[])
+        .map(row => [row.id, row.value]));
+      this.cache.set(collection, rows);
+    }
+    return rows;
+  }
+  private invalidate(): void { this.cache.clear(); this.writes++; }
   get<T>(collection: Collection, id: string): T | undefined {
+    const rows = this.cached(collection);
+    if (rows) { const value = rows.get(id); return value === undefined ? undefined : JSON.parse(value) as T; }
     const row = this.statement("SELECT value FROM records WHERE collection=? AND id=?").get(collection, id) as { value: string } | undefined;
     return row ? JSON.parse(row.value) as T : undefined;
   }
@@ -171,13 +190,20 @@ export class Vault {
     this.writable();
     const object = value as { accountId?: string; change?: { accountId?: string } };
     const accountId = collection === "accounts" ? id : object?.accountId ?? object?.change?.accountId ?? null;
+    const json = JSON.stringify(value);
     this.statement("INSERT INTO records(collection,id,account_id,value) VALUES(?,?,?,?) ON CONFLICT(collection,id) DO UPDATE SET account_id=excluded.account_id,value=excluded.value")
-      .run(collection, id, accountId, JSON.stringify(value));
+      .run(collection, id, accountId, json);
+    this.cache.get(collection)?.set(id, json);
+    this.writes++;
   }
   all<T>(collection: Collection): T[] {
+    const rows = this.cached(collection);
+    if (rows) return Array.from(rows.values(), value => JSON.parse(value) as T);
     return (this.statement("SELECT value FROM records WHERE collection=? ORDER BY rowid").all(collection) as { value: string }[]).map(row => JSON.parse(row.value) as T);
   }
   count(collection: Collection): number {
+    const rows = this.cache.get(collection);
+    if (rows) return rows.size;
     return (this.statement("SELECT count(*) AS total FROM records WHERE collection=?").get(collection) as { total: number }).total;
   }
   listMessages(limit = 500): Message[] {
@@ -195,15 +221,23 @@ export class Vault {
       }
       if (collection === "attachments") { this.removeDocument(`attachment:${id}`); this.deleteBlob(id); }
       this.statement("DELETE FROM records WHERE collection=? AND id=?").run(collection, id);
+      this.cache.get(collection)?.delete(id);
+      this.writes++;
     });
   }
   transaction<T>(fn: () => T): T {
     this.writable();
-    return this.db.transaction(() => {
-      const result = fn();
-      if (result && typeof (result as { then?: unknown }).then === "function") throw new Error("Vault transactions must be synchronous.");
-      return result;
-    })();
+    try {
+      return this.db.transaction(() => {
+        const result = fn();
+        if (result && typeof (result as { then?: unknown }).then === "function") throw new Error("Vault transactions must be synchronous.");
+        return result;
+      })();
+    } catch (error) {
+      // A rollback may have discarded cached writes; reload from the database on next read.
+      this.invalidate();
+      throw error;
+    }
   }
   close(): void {
     if (this.busy || this.writing.size) throw new Error("Archive operations must finish before closing.");
@@ -238,6 +272,7 @@ export class Vault {
       this.statement("DELETE FROM chunks WHERE account_id=?").run(accountId);
       this.statement("DELETE FROM records WHERE account_id=?").run(accountId);
     });
+    this.invalidate();
   }
 
   permitted(accountId: string, sourceId: string): boolean {
@@ -474,6 +509,7 @@ export class Vault {
       }
       await rm(rollback, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     } finally {
+      this.invalidate();
       this.busy = false;
       await rm(stage, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     }

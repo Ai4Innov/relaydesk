@@ -87,13 +87,31 @@ export class ArchiveAiReview {
     if (!message.body.trim() && !message.subject.trim()) return "No local text";
     return undefined;
   }
+  private evidenceMemo?: Map<Evidence, boolean>;
+  private messageMemo?: Map<string, { message?: Message; fingerprint?: string }>;
+  /** Runs read-only work with message reads and evidence checks memoized; used while building one snapshot. */
+  withReadCache<T>(work: () => T): T {
+    if (this.messageMemo) return work();
+    this.messageMemo = new Map(); this.evidenceMemo = new Map();
+    try { return work(); } finally { this.messageMemo = undefined; this.evidenceMemo = undefined; }
+  }
   private evidenceCurrent(evidence: Evidence): boolean {
-    const message = this.vault.get<Message>("messages", evidence.messageId);
-    return !!message && !this.exclusion(message)
+    const memo = this.evidenceMemo?.get(evidence);
+    if (memo !== undefined) return memo;
+    let entry = this.messageMemo?.get(evidence.messageId);
+    if (!entry) {
+      const message = this.vault.get<Message>("messages", evidence.messageId);
+      entry = { message, fingerprint: message ? fingerprint(message) : undefined };
+      this.messageMemo?.set(evidence.messageId, entry);
+    }
+    const message = entry.message;
+    const current = !!message && !this.exclusion(message)
       && (!evidence.gmailApi || mailOriginAllowed(this.vault, {
         ...message, accountId: evidence.accountId ?? message.accountId, gmailApi: evidence.gmailApi
       }, true))
-      && fingerprint(message) === evidence.fingerprint;
+      && entry.fingerprint === evidence.fingerprint;
+    this.evidenceMemo?.set(evidence, current);
+    return current;
   }
   actionVisible(action: ActionItem): boolean {
     const evidence = (action as ReviewAction).reviewEvidence;

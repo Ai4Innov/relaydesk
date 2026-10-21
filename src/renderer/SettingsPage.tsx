@@ -5,6 +5,7 @@ import { fileSize, formatDate, hostOS, OS_TEXT } from "./utils";
 import { BrowserSetup } from "./BrowserSetup";
 import { FullMailArchive } from "./FullMailArchive";
 import { RefreshControls } from "./RefreshControls";
+import { KnowledgeSources } from "./KnowledgeSources";
 import { AI_PROVIDER_HELP, activeAi } from "./ai";
 
 type Run = (command: Command, success?: string, onError?: (text: string) => void) => Promise<CommandResult | undefined>;
@@ -220,6 +221,7 @@ function Connections({ data, run, busy }: Props) {
         <ApiForm {...{ data, run, busy }}/>
       </details>
     </section>
+    <KnowledgeSources {...{ data, run, busy }}/>
     <section className="card settings-section" aria-label="Refresh and sync">
       <RefreshControls {...{ data, busy, run }}/>
     </section>

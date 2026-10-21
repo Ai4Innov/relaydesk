@@ -11,6 +11,7 @@ import { insidePath } from "./copilot/workspace-fs";
 import type { TaskItem } from "../shared/productivity";
 import type { BrowserCalendarItem } from "../shared/browser";
 import type { Vault } from "./storage/vault";
+import type { KnowledgeLibrary } from "./knowledge";
 import type { AgentResponse, ChatAgentRequest } from "./copilot";
 import { commandSchema } from "./ipc/schema";
 import { payloadHash, validateApproval, validateChange } from "./approvals";
@@ -112,6 +113,7 @@ interface Hooks {
   execute(command: ProposedCommand, beforeWrite?: () => void): Promise<CommandResult>;
   refreshMail?(request: MailFreshnessRequest): Promise<MailFreshnessResult>;
   workspaceDirectory?(): string;
+  knowledge?: Pick<KnowledgeLibrary, "list" | "search" | "read">;
   openPath?(path: string, reveal: boolean): Promise<void>;
   attention?(title: string, body: string): void;
 }
@@ -938,6 +940,20 @@ export class ChatService {
             type === "browser.calendar.move" ? { expectedRevision: this.revision("browserItems", args.itemId) } : {};
           return this.propose(turn, commandSchema.parse({ ...args, ...generated, type }) as ProposedCommand);
         }));
+    }
+    if (this.hooks.knowledge) {
+      const knowledge = this.hooks.knowledge;
+      tools.push(
+        tool("list_documents", "Listing documents from added folders and shared links", z.object({
+          sourceId: idSchema.optional()
+        }).strict(), args => knowledge.list(args.sourceId)),
+        tool("search_documents", "Searching documents from added folders and shared links", z.object({
+          query: z.string().min(1).max(500), sourceId: idSchema.optional(), limit: z.number().int().min(1).max(20).optional()
+        }).strict(), args => knowledge.search(args.query, { sourceId: args.sourceId, limit: args.limit })),
+        tool("read_document", "Reading a document from an added folder or shared link", z.object({
+          documentId: idSchema, offset: z.number().int().min(0).optional(), length: z.number().int().min(500).max(20000).optional()
+        }).strict(), args => knowledge.read(args.documentId, args.offset, args.length))
+      );
     }
     if (this.hooks.settings().assistantTools && this.hooks.workspaceDirectory) {
       const directory = this.hooks.workspaceDirectory();

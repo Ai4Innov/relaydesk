@@ -190,7 +190,7 @@ async function start(): Promise<void> {
     settingsChanged: preferences,
     notify: (title, body) => { if (Notification.isSupported()) new Notification({ title, body, icon: icon() }).show(); }
   });
-  ipcMain.handle("relay:snapshot", event => { trusted(event); return service!.snapshot(); });
+  ipcMain.handle("relay:snapshot", event => { trusted(event); return service!.rendererSnapshot(); });
   ipcMain.handle("relay:command", async (event, input: unknown) => {
     trusted(event);
     const parsed = commandSchema.safeParse(input);

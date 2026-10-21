@@ -22,6 +22,24 @@ import { validateChange as validateCalendarChange } from "./connectors/calendar"
 import type { Vault } from "./storage/vault";
 import { ArchiveAiReview } from "./ai-review";
 
+const messageIndexes = new WeakMap<Message[], Map<string, Message | undefined>>();
+const messageFallbacks = new WeakMap<Message[], (id: string) => Message | undefined>();
+/** Same result as `source.messages.find(m => m.id === id)` via a lazily built index; arrays may register a lazy archive fallback. */
+function findMessage(source: Pick<Snapshot, "messages">, id: string): Message | undefined {
+  let index = messageIndexes.get(source.messages);
+  if (!index) {
+    index = new Map();
+    for (const message of source.messages) if (!index.has(message.id)) index.set(message.id, message);
+    messageIndexes.set(source.messages, index);
+  }
+  if (!index.has(id)) {
+    const fallback = messageFallbacks.get(source.messages);
+    if (!fallback) return undefined;
+    index.set(id, fallback(id));
+  }
+  return index.get(id);
+}
+
 interface ProductivityHooks {
   changed(): void;
   canReview?(): void;
@@ -96,19 +114,37 @@ interface ReportPromptScope {
 
 export class ProductivityService {
   readonly review: ArchiveAiReview;
+  /** Message reads memoized for the duration of one snapshot; nothing writes messages while it is built. */
+  private readScope?: Map<string, Message | undefined>;
   constructor(readonly vault: Vault, private readonly hooks: ProductivityHooks) {
     this.review = new ArchiveAiReview(vault, hooks);
   }
 
+  private storedMessage(id: string): Message | undefined {
+    if (!this.readScope) return this.vault.get<Message>("messages", id);
+    if (!this.readScope.has(id)) this.readScope.set(id, this.vault.get<Message>("messages", id));
+    return this.readScope.get(id);
+  }
+
   private archiveSource(source: Snapshot): Snapshot {
-    const messages = new Map(source.messages.map(message => [message.id, message]));
-    for (const message of this.vault.all<Message>("messages"))
-      if (!messages.has(message.id)) messages.set(message.id, message);
-    const visible = { ...source, messages: [...messages.values()].filter(message => mailOriginAllowed(this.vault, message)) };
+    // Messages are only ever looked up by id here, so older archived messages are read lazily instead of parsing the whole archive.
+    const known = new Set(source.messages.map(message => message.id));
+    const messages = source.messages.filter(message => mailOriginAllowed(this.vault, message));
+    messageFallbacks.set(messages, id => {
+      if (known.has(id)) return undefined;
+      const message = this.storedMessage(id);
+      return message && mailOriginAllowed(this.vault, message) ? message : undefined;
+    });
+    const visible = { ...source, messages };
     return { ...visible, actions: source.actions.filter(action => this.review.actionVisible(action) && this.actionVisible(action, visible)) };
   }
 
   snapshot(source: Snapshot): { tasks: TaskItem[]; focusReport?: FocusReport; aiReview: AiReviewCoverage; actions: ActionItem[] } {
+    this.readScope = new Map();
+    try { return this.review.withReadCache(() => this.buildSnapshot(source)); } finally { this.readScope = undefined; }
+  }
+
+  private buildSnapshot(source: Snapshot): { tasks: TaskItem[]; focusReport?: FocusReport; aiReview: AiReviewCoverage; actions: ActionItem[] } {
     source = this.archiveSource(source);
     const tasks = this.materializeTasks(source);
     const aiReview = this.review.coverage();
@@ -323,7 +359,7 @@ export class ProductivityService {
         }
         const prompt = this.reportPrompt(command.prompt, promptScope, requestedCitations);
         const mailOrigins = requestedCitations.flatMap(citation => {
-          const message = source.messages.find(item => item.id === citation.messageId);
+          const message = findMessage(source, citation.messageId);
           if (!message) return [];
           const attachment = citation.attachmentId ? this.vault.get<Attachment>("attachments", citation.attachmentId) : undefined;
           return [message.gmailApi, attachment?.gmailApi].filter(origin => !!origin)
@@ -343,8 +379,8 @@ export class ProductivityService {
           narrative: permitted.length ? generated.answer.trim() : undefined,
           citationIds: permitted.map(citation => citation.id),
           inputCitationIds: requestedCitations.map(citation => citation.id),
-          sourceIds: sortUnique(requestedCitations.map(citation => source.messages.find(message => message.id === citation.messageId)?.sourceId)),
-          accountIds: sortUnique(requestedCitations.map(citation => source.messages.find(message => message.id === citation.messageId)?.accountId)),
+          sourceIds: sortUnique(requestedCitations.map(citation => findMessage(source, citation.messageId)?.sourceId)),
+          accountIds: sortUnique(requestedCitations.map(citation => findMessage(source, citation.messageId)?.accountId)),
           taskIds: tasks.filter(task => permittedTaskIds.has(task.id)).map(task => task.id),
           mailOrigins
         };
@@ -400,7 +436,7 @@ export class ProductivityService {
   }
 
   private mergeActionTask(action: ActionItem, source: Snapshot, stored?: StoredTaskRecord): TaskItem {
-    const message = source.messages.find(item => item.id === action.messageId);
+    const message = findMessage(source, action.messageId);
     const createdAt = stored?.createdAt || message?.receivedAt || message?.browser?.capturedAt || now();
     const updatedAt = stored?.updatedAt || message?.receivedAt || message?.browser?.capturedAt || createdAt;
     const merged: StoredTaskRecord = {
@@ -479,7 +515,7 @@ export class ProductivityService {
   }
 
   private actionVisible(action: ActionItem, source: Snapshot): boolean {
-    const message = source.messages.find(item => item.id === action.messageId);
+    const message = findMessage(source, action.messageId);
     if (!message || message.deleted || !mailOriginAllowed(this.vault, message)
       || !action.citations.every(citation => this.originCitationAllowed(citation, false, source))) return false;
     return this.sourceVisible(message.accountId, message.sourceId, source);
@@ -488,7 +524,7 @@ export class ProductivityService {
   private recordVisible(record: StoredTaskRecord, source: Snapshot): boolean {
     if (record.origin === "manual") return true;
     if (!record.sourceAccountId || !record.sourceSourceId || !record.sourceMessageId) return false;
-    const message = source.messages.find(item => item.id === record.sourceMessageId);
+    const message = findMessage(source, record.sourceMessageId);
     if (!message || message.deleted || !mailOriginAllowed(this.vault, message)
       || !record.citations.every(citation => this.originCitationAllowed(citation, false, source))) return false;
     const action = record.sourceActionId ? this.vault.get<ActionItem>("actions", record.sourceActionId) : undefined;
@@ -507,7 +543,7 @@ export class ProductivityService {
     const seen = new Set<string>();
     return citations.filter(citation => {
       if (seen.has(citation.id) || !this.originCitationAllowed(citation, false, source)) return false;
-      const message = source.messages.find(item => item.id === citation.messageId);
+      const message = findMessage(source, citation.messageId);
       if (!message || message.deleted || !this.sourceVisible(message.accountId, message.sourceId, source)) return false;
       seen.add(citation.id);
       return true;
@@ -516,14 +552,14 @@ export class ProductivityService {
 
   private citationEligibleForAi(citation: Citation, source: Snapshot): boolean {
     if (!this.review.citationVisible(citation) || !this.originCitationAllowed(citation, true, source)) return false;
-    const message = source.messages.find(item => item.id === citation.messageId);
+    const message = findMessage(source, citation.messageId);
     if (!message || message.deleted || !this.sourceVisible(message.accountId, message.sourceId, source)) return false;
     const account = source.accounts.find(item => item.id === message.accountId);
     return !!account?.aiEnabled;
   }
 
   private citationEligibleInVault(messageId: string, requireAi: boolean): boolean {
-    const message = this.vault.get<Message>("messages", messageId);
+    const message = this.storedMessage(messageId);
     if (!message || message.deleted || !mailOriginAllowed(this.vault, message, requireAi)) return false;
     const account = this.vault.get<Account>("accounts", message.accountId);
     const source = this.vault.get<Source>("sources", message.sourceId);
@@ -536,7 +572,7 @@ export class ProductivityService {
       && this.citationEligibleInVault(citation.messageId, requireAi);
   }
   private originCitationAllowed(citation: Citation, ai = false, source?: Snapshot): boolean {
-    const message = this.vault.get<Message>("messages", citation.messageId) ?? source?.messages.find(item => item.id === citation.messageId);
+    const message = this.storedMessage(citation.messageId) ?? (source && findMessage(source, citation.messageId));
     if (!message || !mailOriginAllowed(this.vault, message, ai)) return false;
     if (!citation.attachmentId) return true;
     const attachment = this.vault.get<Attachment>("attachments", citation.attachmentId);
@@ -663,8 +699,8 @@ export class ProductivityService {
       narrative: reportScopeVisible && visibleNarrativeCitations.length === stored?.citationIds.length ? stored?.narrative : undefined,
       citations: visibleNarrativeCitations,
       citationIds: visibleNarrativeCitations.map(citation => citation.id),
-      sourceIds: sortUnique(visibleNarrativeCitations.map(citation => source.messages.find(message => message.id === citation.messageId)?.sourceId)),
-      accountIds: sortUnique(visibleNarrativeCitations.map(citation => source.messages.find(message => message.id === citation.messageId)?.accountId)),
+      sourceIds: sortUnique(visibleNarrativeCitations.map(citation => findMessage(source, citation.messageId)?.sourceId)),
+      accountIds: sortUnique(visibleNarrativeCitations.map(citation => findMessage(source, citation.messageId)?.accountId)),
       metrics: {
         totalTasks: tasks.length,
         openTasks: openTasks.length,
@@ -774,14 +810,14 @@ export class ProductivityService {
 
   private taskHasPartialBrowserCoverage(task: TaskItem, source: Snapshot): boolean {
     return task.citations.some(citation => {
-      const message = source.messages.find(item => item.id === citation.messageId);
+      const message = findMessage(source, citation.messageId);
       return !!message?.browser && (message.browser.completeness === "preview" || !message.receivedAt);
     });
   }
 
   private taskHasStaleBrowserCoverage(task: TaskItem, source: Snapshot): boolean {
     return task.citations.some(citation => {
-      const message = source.messages.find(item => item.id === citation.messageId);
+      const message = findMessage(source, citation.messageId);
       return !!message?.browser && Number.isFinite(Date.parse(message.browser.capturedAt))
         && Date.parse(message.browser.capturedAt) <= Date.now() - PRODUCTIVITY_BROWSER_STALE_HOURS * 3_600_000;
     });

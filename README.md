@@ -143,6 +143,7 @@ Relay Desk is set up so that it just works once an inbox is connected. You can c
 
 - **One inbox for many channels:** Gmail (browser companion, Apps Script relay, Gmail API or Playwright), Microsoft 365, Slack, WhatsApp Web, and Google and Microsoft calendars.
 - **Chat agent with reviewed actions:** finds what needs attention, cites evidence, drafts replies, creates tasks and focus reports, and writes DOCX, XLSX and PPTX files. Every write is a card you confirm.
+- **Folders and shared links as knowledge:** add a local folder or an "Anyone with the link" Google Drive, Docs, Dropbox or OneDrive link in **Settings → Connections**. The assistant can then search and quote your PDFs, Office files and notes, read-only.
 - **Your AI, your choice:** GitHub Copilot or OpenAI Codex with your existing subscription sign-in, or Claude with your own key. Pick any available model, per message.
 - **Local-first and encrypted:** SQLCipher archive, encrypted attachments and an OS-protected key (DPAPI, Keychain or Secret Service), plus local keyword and optional semantic search.
 

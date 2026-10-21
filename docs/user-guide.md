@@ -46,6 +46,50 @@ workspace, every shell command and every web request show an approval card first
 workspace folder and shell/web policy (ask / off) in **Settings → AI & assistant**.
 Email content never triggers these tools on its own, and Relay Desk never sends email.
 
+### Folders and shared links
+
+**Settings → Connections → Folders & shared links** lets the assistant read documents that
+are not in your mail:
+
+- **Add a folder** picks a folder on this computer, such as a project folder or a synced
+  Google Drive, OneDrive or Dropbox folder. Subfolders are included. Hidden files,
+  symbolic links, `node_modules` and Office lock files (`~$…`) are skipped.
+- **Add link** accepts a public share link:
+
+  | Link type | Example |
+  | --- | --- |
+  | Google Drive folder | `https://drive.google.com/drive/folders/<id>`, including subfolders up to 5 levels |
+  | Google Drive file | `https://drive.google.com/file/d/<id>/view` |
+  | Google Docs, Sheets or Slides | Exported as DOCX, XLSX or PPTX |
+  | Dropbox file or folder | A folder is downloaded as one zip |
+  | OneDrive or SharePoint file | |
+  | Any direct `https://` file link | |
+
+  Links must be shared as **"Anyone with the link"**. Relay Desk sends no account
+  credentials, so a private link shows an error telling you to change its sharing.
+
+Supported formats are PDF, Word, Excel, PowerPoint, zip, text, Markdown, CSV, JSON and
+HTML. Images, audio and video in folders are not indexed.
+
+Limits per source:
+
+| Limit | Value |
+| --- | --- |
+| Files per folder | 2,000 |
+| Files per link | 500 |
+| Size per file | 50 MB |
+| Searchable text per document | 300,000 characters |
+| Sources in total | 50 |
+
+Extracted text is stored in the encrypted archive. Original files are never modified.
+Folders re-sync every 10 minutes and links every 6 hours while the app runs. **Sync now**
+refreshes a source immediately.
+
+In chat, ask for example "What does the SBS offer in my Finco folder say about pricing?".
+The assistant uses `search_documents` and `read_document` to answer. Turn off a source's
+**AI** switch to keep it in the archive but hidden from the assistant. **Remove** deletes
+its extracted text.
+
 ### Settings and connection priority
 
 Settings has four tabs: **Connections**, **AI & assistant**, **Data & app** and

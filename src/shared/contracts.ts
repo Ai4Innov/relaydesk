@@ -3,7 +3,29 @@ import type { AiReviewCoverage, FocusReport, ProductivityCommand, TaskItem } fro
 import type { ChatCommand, ChatState } from "./chat";
 import type { GmailApiOrigin, MailTransportStatus, PlaywrightMailStatus } from "./mail-transport";
 export type Provider = "gmail" | "microsoft" | "slack" | "whatsapp";
-export type Collection = "accounts" | "sources" | "messages" | "drafts" | "attachments" | "events" | "browserItems" | "actions" | "tasks" | "reports" | "jobs" | "approvals" | "settings" | "checkpoints" | "secrets" | "audit";
+export type Collection = "accounts" | "sources" | "messages" | "drafts" | "attachments" | "events" | "browserItems" | "actions" | "tasks" | "reports" | "jobs" | "approvals" | "settings" | "checkpoints" | "secrets" | "audit" | "knowledge" | "documents";
+
+export type KnowledgeProvider = "local" | "google-drive" | "dropbox" | "onedrive" | "web";
+/** A local folder or public shared link indexed as read-only reference material for the assistant. */
+export interface KnowledgeSource {
+  id: string;
+  kind: "folder" | "link";
+  provider: KnowledgeProvider;
+  name: string;
+  /** Absolute folder path or the original share URL. */
+  location: string;
+  aiEnabled: boolean;
+  addedAt: string;
+  status: "idle" | "syncing" | "ready" | "error";
+  progress?: string;
+  lastSyncAt?: string;
+  error?: string;
+  files: number;
+  indexed: number;
+  skipped: number;
+  failed: number;
+  truncated?: boolean;
+}
 
 export interface Account {
   id: string;
@@ -38,6 +60,8 @@ export interface Message {
   recipients: string[];
   body: string;
   html?: string;
+  /** Set in renderer snapshots when `html` was left out to keep them small; load it with `message.html`. */
+  htmlOmitted?: boolean;
   receivedAt: string;
   url: string;
   unread: boolean;
@@ -295,6 +319,7 @@ export interface Snapshot {
   assistantWorkspace?: string;
   playwrightMail?: PlaywrightMailStatus;
   browserItems?: BrowserCalendarItem[];
+  knowledge?: KnowledgeSource[];
   tasks?: TaskItem[];
   focusReport?: FocusReport;
   aiReview?: AiReviewCoverage;
@@ -312,6 +337,12 @@ export type Command =
   | { type: "gmailRelay.sync"; sourceId?: string }
   | { type: "assistant.workspace.open" }
   | { type: "assistant.workspace.choose" }
+  | { type: "knowledge.folder.add"; name?: string }
+  | { type: "knowledge.link.add"; url: string; name?: string }
+  | { type: "knowledge.sync"; sourceId: string }
+  | { type: "knowledge.update"; sourceId: string; aiEnabled?: boolean; name?: string }
+  | { type: "knowledge.remove"; sourceId: string }
+  | { type: "knowledge.open"; sourceId: string }
   | { type: "browser.pair"; consent: boolean }
   | { type: "browser.revoke" }
   | { type: "browser.extension" }
@@ -349,6 +380,7 @@ export type Command =
   | { type: "calendar.approve"; approvalId: string; hash: string }
   | { type: "open.message"; messageId: string }
   | { type: "message.load"; messageId: string; refresh?: boolean }
+  | { type: "message.html"; messageId: string }
   | { type: "message.downloadAll" }
   | { type: "clipboard.copy"; text: string }
   | { type: "job.retry"; jobId: string }
@@ -357,6 +389,7 @@ export type Command =
   | { type: "archive.reindex" };
 export interface CommandResult {
   messageThread?: MessageThread;
+  html?: string;
   attachmentView?: AttachmentView;
   attachmentSave?: AttachmentSave;
   browserCalendarOutcome?: "saved" | "needs-user" | "uncertain";

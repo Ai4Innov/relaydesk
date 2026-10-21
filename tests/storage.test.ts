@@ -20,6 +20,27 @@ afterEach(() => {
 const stream = (text: string) => new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(Buffer.from(text)); controller.close(); } });
 
 describe("encrypted vault", () => {
+  it("serves cached reads that stay consistent with writes, deletes, rollbacks and purges", () => {
+    const { vault } = setup();
+    vault.put("tasks", "a", { id: "a", accountId: "one", n: 1 });
+    vault.put("tasks", "b", { id: "b", accountId: "two", n: 1 });
+    expect(vault.all<{ id: string }>("tasks").map(task => task.id)).toEqual(["a", "b"]);
+    const before = vault.generation;
+    vault.put("tasks", "a", { id: "a", accountId: "one", n: 2 });
+    vault.put("tasks", "c", { id: "c", accountId: "one", n: 1 });
+    expect(vault.generation).toBeGreaterThan(before);
+    expect(vault.all<{ id: string; n: number }>("tasks")).toEqual([
+      { id: "a", accountId: "one", n: 2 }, { id: "b", accountId: "two", n: 1 }, { id: "c", accountId: "one", n: 1 }]);
+    const copy = vault.get<{ n: number }>("tasks", "a")!; copy.n = 99;
+    expect(vault.get<{ n: number }>("tasks", "a")!.n).toBe(2);
+    expect(() => vault.transaction(() => { vault.put("tasks", "b", { id: "b", n: 5 }); throw new Error("rollback"); })).toThrow("rollback");
+    expect(vault.get<{ n: number }>("tasks", "b")!.n).toBe(1);
+    vault.delete("tasks", "c");
+    expect(vault.get("tasks", "c")).toBeUndefined();
+    expect(vault.count("tasks")).toBe(2);
+    vault.purgeAccount("one");
+    expect(vault.all<{ id: string }>("tasks").map(task => task.id)).toEqual(["b"]);
+  });
   it("selects the latest mailbox dates before undated captures, irrespective of capture time", () => {
     const { vault } = setup();
     vault.put("messages", "old", { id: "old", receivedAt: "2026-09-21T10:00:00Z" });

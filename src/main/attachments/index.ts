@@ -148,9 +148,18 @@ export class AttachmentProcessor {
   }
 
   private extract(bytes: Buffer, attachment: Attachment, approved: boolean, signal: AbortSignal): Promise<Extraction> {
+    return extractIsolated(bytes, { name: attachment.name, mimeType: attachment.mimeType },
+      { approved, modelDirectory: this.options.modelDirectory, workerPath: this.options.workerPath }, signal);
+  }
+}
+
+/** Parses a document in a disposable child process with memory limits. Shared by attachments and knowledge folders. */
+export function extractIsolated(bytes: Buffer, file: { name: string; mimeType: string },
+  options: { approved: boolean; modelDirectory: string; workerPath?: string }, signal: AbortSignal): Promise<Extraction> {
+  {
     const bundled = typeof __dirname !== "undefined" ? join(__dirname, "attachment-worker.cjs") : "";
     // Never fall back to cwd: a packaged app can be started from an untrusted folder.
-    const workerPath = this.options.workerPath ?? bundled;
+    const workerPath = options.workerPath ?? bundled;
     if (!existsSync(workerPath)) throw new PipelineError("blocked", "The packaged attachment worker is missing. Repair the Relay Desk installation.");
     const hostPath = join(dirname(workerPath), "attachment-host.cjs");
     if (!existsSync(hostPath)) throw new PipelineError("blocked", "The packaged attachment worker host is missing. Repair the Relay Desk installation.");
@@ -190,7 +199,7 @@ export class AttachmentProcessor {
       child.once("close", () => finish(new PipelineError("failed", "The isolated parser exited without an extraction result.")));
       child.send({
         workerPath,
-        workerData: { bytes, attachment: { name: attachment.name, mimeType: attachment.mimeType }, approved, modelDirectory: this.options.modelDirectory },
+        workerData: { bytes, attachment: { name: file.name, mimeType: file.mimeType }, approved: options.approved, modelDirectory: options.modelDirectory },
         resourceLimits: { maxOldGenerationSizeMb: 384, maxYoungGenerationSizeMb: 32, stackSizeMb: 8 },
       }, error => { if (error) finish(new PipelineError("failed", "The isolated parser process could not receive the attachment.")); });
       if (signal.aborted) abort();

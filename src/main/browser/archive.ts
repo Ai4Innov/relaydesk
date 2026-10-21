@@ -45,21 +45,27 @@ export class BrowserArchive {
     // A disconnected/forgotten account must not be silently re-authorized by an open tab.
     if (this.vault.get("checkpoints", `browser-forgotten:${accountId}`)) throw new Error("This browser account was forgotten. Pair again to authorize discovery.");
     if (existing?.status === "disconnected") throw new Error("This browser account is disconnected. Pair again to reconnect.");
-    this.vault.transaction(() => {
-      this.vault.put("accounts", accountId, account);
-      if (whatsapp && input.chat) {
-        const id = registrationSourceId(accountId, input)!;
-        if (!this.vault.get("sources", id)) this.vault.put("sources", id, { id, accountId,
-          providerId: input.chat.id, kind: "channel", name: `${input.chat.name || input.chat.id} · WhatsApp (${input.chat.id})`,
-          selected: false } satisfies Source);
-      }
-      for (const kind of whatsapp ? [] : ["mail", "calendar"] as const) {
-        const id = sourceId(accountId, kind);
-        if (!this.vault.get("sources", id)) this.vault.put("sources", id, { id, accountId, providerId: kind, kind,
-          name: kind === "mail" ? "Gmail pages (browser)" : "Calendar & meetings (browser)", selected: full } satisfies Source);
-      }
-    });
-    this.changed();
+    const missingSources = whatsapp
+      ? (input.chat && !this.vault.get("sources", registrationSourceId(accountId, input)!) ? 1 : 0)
+      : (["mail", "calendar"] as const).filter(kind => !this.vault.get("sources", sourceId(accountId, kind))).length;
+    // Companions re-register on every request; only write and notify when something is actually new.
+    if (!existing || missingSources) {
+      this.vault.transaction(() => {
+        this.vault.put("accounts", accountId, account);
+        if (whatsapp && input.chat) {
+          const id = registrationSourceId(accountId, input)!;
+          if (!this.vault.get("sources", id)) this.vault.put("sources", id, { id, accountId,
+            providerId: input.chat.id, kind: "channel", name: `${input.chat.name || input.chat.id} · WhatsApp (${input.chat.id})`,
+            selected: false } satisfies Source);
+        }
+        for (const kind of whatsapp ? [] : ["mail", "calendar"] as const) {
+          const id = sourceId(accountId, kind);
+          if (!this.vault.get("sources", id)) this.vault.put("sources", id, { id, accountId, providerId: kind, kind,
+            name: kind === "mail" ? "Gmail pages (browser)" : "Calendar & meetings (browser)", selected: full } satisfies Source);
+        }
+      });
+      this.changed();
+    }
     const selected = registrationSourceId(accountId, input);
     return { accountId, enabled: !this.paused() && account.consent && account.status === "connected"
       && !!selected && !!this.vault.get<Source>("sources", selected)?.selected };

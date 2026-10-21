@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import DOMPurify from "dompurify";
 import "./email-body.css";
 
@@ -33,9 +33,32 @@ function emailDocument(html: string): string {
   return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'none'; font-src 'none'; connect-src 'none'; form-action 'none'; base-uri 'none'"><style>html{color-scheme:light}body{margin:16px;color:#202d35;background:#fff;font:15px/1.6 Arial,sans-serif;overflow-wrap:anywhere}table{max-width:100%;border-collapse:collapse}td,th{padding:6px;vertical-align:top}pre{white-space:pre-wrap}blockquote{margin-left:12px;padding-left:14px;border-left:3px solid #cbd5df}a{color:#256b81;text-decoration:underline}h1,h2,h3{line-height:1.3}*{max-width:100%;box-sizing:border-box}</style></head><body>${container.innerHTML}</body></html>`;
 }
 
-export function EmailBody({ body, html }: { body: string; html?: string }) {
+const htmlCache = new Map<string, string>();
+/** Loads formatted HTML left out of the window snapshot, without triggering a full snapshot refresh. */
+function useOmittedHtml(messageId: string | undefined, revision: string | undefined): string | undefined {
+  const key = messageId ? `${messageId}:${revision ?? ""}` : "";
+  const [loaded, setLoaded] = useState<{ key: string; html?: string }>();
+  useEffect(() => {
+    if (!key || htmlCache.has(key) || typeof window === "undefined" || !window.relay) return;
+    let active = true;
+    window.relay.command({ type: "message.html", messageId: messageId! }).then(result => {
+      if (result.html) {
+        htmlCache.set(key, result.html);
+        if (htmlCache.size > 60) htmlCache.delete(htmlCache.keys().next().value!);
+      }
+      if (active) setLoaded({ key, html: result.html });
+    }, () => { if (active) setLoaded({ key }); });
+    return () => { active = false; };
+  }, [key, messageId]);
+  if (!key) return undefined;
+  return htmlCache.get(key) ?? (loaded?.key === key ? loaded.html : undefined);
+}
+
+export function EmailBody({ body, html, messageId, revision }: { body: string; html?: string; messageId?: string; revision?: string }) {
   const [plain, setPlain] = useState(false);
-  const content = useMemo(() => html ? emailDocument(html) : undefined, [html]);
+  const lazy = useOmittedHtml(html ? undefined : messageId, revision);
+  const source = html ?? lazy;
+  const content = useMemo(() => source ? emailDocument(source) : undefined, [source]);
   if (!content) return <div className="plain-body">{body}</div>;
   return <section className="email-body">
     <div className="email-body-toolbar"><span>Formatted email · remote images and active content blocked</span>

@@ -154,6 +154,18 @@ describe("RelayService safety integration (in-memory storage and offline provide
   });
   afterEach(async () => { await service.stop(); vi.useRealTimers(); });
 
+  it("keeps formatted HTML out of the window snapshot and serves it on demand for permitted messages", async () => {
+    vault.put("messages", message.id, { ...message, html: "<p>Could you <b>review</b> this today?</p>" });
+    expect(service.snapshot().messages[0].html).toContain("<b>review</b>");
+    const slim = service.rendererSnapshot().messages[0];
+    expect(slim).toMatchObject({ id: message.id, body: message.body, htmlOmitted: true });
+    expect(slim.html).toBeUndefined();
+    expect(commandSchema.safeParse({ type: "message.html", messageId: message.id }).success).toBe(true);
+    await expect(service.command({ type: "message.html", messageId: message.id })).resolves.toEqual({ html: "<p>Could you <b>review</b> this today?</p>" });
+    vault.put("sources", source.id, { ...source, selected: false });
+    await expect(service.command({ type: "message.html", messageId: message.id })).rejects.toThrow();
+  });
+
   it("persists editable manual tasks independently of AI and supplies local focus metrics", async () => {
     vault.put("accounts", account.id, { ...account, aiEnabled: false });
     const created = await service.command({ type: "task.create", title: "Prepare review", priority: "high" });
