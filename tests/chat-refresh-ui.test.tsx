@@ -14,7 +14,7 @@ function snapshot(): Snapshot {
     accounts: [{ id: "mail-account", name: "Mail", email: "mail@example.org", provider: "gmail", connection: "browser", consent: true, aiEnabled: true, status: "connected" }],
     sources: [{ id: "inbox", accountId: "mail-account", providerId: "INBOX", name: "Inbox", kind: "mail", selected: true }],
     messages: [], drafts: [], attachments: [], events: [], actions: [], jobs: [], approvals: [],
-    settings: { ...defaultSettings, model: "model-one" },
+    settings: { ...defaultSettings, model: "model-one", chatAskMailRefresh: true },
     models: [{ id: "model-one", name: "Available one" }, { id: "model-two", name: "Available two" }],
     copilot: { status: "ready", message: "Synthetic isolated connection" },
     archive: { messages: 0, attachments: 0, indexed: 0, searchMode: "keyword", bytes: 0 }, demo: false,
@@ -37,6 +37,17 @@ describe("optional mail refresh provenance", () => {
     expect(html).toContain("No download requested for this answer");
     expect(html).not.toContain("Inbox refresh incomplete");
     expect(html).not.toContain("Inbox refreshed before this answer");
+  });
+
+  it("hides the saved-messages note when the pre-question prompt is off (default)", () => {
+    const data = snapshot();
+    data.settings = { ...data.settings, chatAskMailRefresh: false };
+    expect(defaultSettings.chatAskMailRefresh).toBe(false);
+    data.chat!.conversations = [{ id: "chat", title: "Saved", updatedAt: "2026-09-29T08:00:00Z",
+      turns: [{ id: "answer", role: "assistant", text: "Saved evidence.", createdAt: "2026-09-29T08:00:00Z", status: "complete", citations: [], actions: [], mailRefresh: "local" }] }];
+    const html = renderToStaticMarkup(<Chat data={data} run={vi.fn()} navigate={vi.fn()}/>);
+    expect(html).toContain("Saved evidence.");
+    expect(html).not.toContain("No download requested for this answer");
   });
 });
 
@@ -115,6 +126,20 @@ describe.skipIf(!process.env.RELAY_UI_BROWSER_TEST)("optional mail refresh inter
       await input.press("Enter");
       await browserExpect(prompt(page)).toBeVisible();
       expect(await sends(page)).toHaveLength(1);
+    } finally { await page.close(); }
+  });
+
+  it("sends immediately using saved messages when the prompt setting is off", async () => {
+    const state = snapshot();
+    state.settings = { ...state.settings, chatAskMailRefresh: false };
+    const page = await openPage(state);
+    try {
+      const input = page.getByRole("textbox", { name: "Message Copilot" });
+      await input.fill("Summarize my latest messages");
+      await input.press("Enter");
+      await browserExpect(page.getByRole("log")).toContainText("Synthetic answer.");
+      await browserExpect(prompt(page)).toHaveCount(0);
+      expect(await sends(page)).toEqual([{ type: "chat.send", text: "Summarize my latest messages", model: "model-one", mailRefresh: "local" }]);
     } finally { await page.close(); }
   });
 

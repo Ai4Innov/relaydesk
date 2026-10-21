@@ -480,6 +480,9 @@ describe("chat agent tools, consent and encrypted checkpoint state", () => {
     expect(chatFailureMessage(new SyntaxError("Private provider payload"))).toContain("invalid response JSON");
     expect(chatFailureMessage(new Error("Evidence changed during this chat. Start a new request."))).toContain("evidence changed");
     expect(chatFailureMessage(new Error("Copilot cited evidence it did not read."))).toContain("unverified citation");
+    expect(chatFailureMessage(new Error("CAPIError: 400 prompt token count of 210000 exceeds the limit of 200000"))).toContain("too large for the selected model");
+    expect(chatFailureMessage(new Error("CAPIError: 429 Too Many Requests"))).toContain("rate-limiting");
+    expect(chatFailureMessage(new Error("CAPIError: 503 Service Unavailable"))).toContain("temporarily unreachable");
     expect(chatFailureMessage(new Error("Private provider payload with sensitive event content"))).not.toContain("sensitive event");
   });
 
@@ -649,10 +652,11 @@ describe("chat agent tools, consent and encrypted checkpoint state", () => {
     await expect(f.chat.command({ type: "chat.send", text: "x".repeat(CHAT_MESSAGE_MAX + 1) })).rejects.toThrow();
     expect(f.hooks.generate).toHaveBeenCalledOnce();
   });
-  it("rejects hallucinated citations and excessive tool loops", async () => {
+  it("drops hallucinated citations and rejects excessive tool loops", async () => {
     const f = fixture();
     f.hooks.generate.mockResolvedValueOnce({ answer: "Claim", citationIds: ["never-read"] });
-    await f.send(); expect(f.last().status).toBe("error");
+    await f.send(); expect(f.last().status).toBe("complete");
+    expect(f.last().citations.some(citation => citation.id === "never-read")).toBe(false);
     f.hooks.generate.mockImplementation(async request => {
       for (let i = 0; i < 17; i++) await call(request.tools, "workspace_status");
       return { answer: "Loop", citationIds: [] };

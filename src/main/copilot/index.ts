@@ -210,8 +210,13 @@ export class CopilotAdapter implements AiProvider {
       unsubscribeToolActivity = request.onToolActivity?.(activity);
       deadlineTimer = setTimeout(() => expire("deadline"), CHAT_MAX_RUNTIME_MS);
       let lastProgress = 0;
+      let lastMessage = "";
       const maxTurns = workspace ? 48 : 24;
       unsubscribe = session.on(event => {
+        if (event.type === "assistant.message") {
+          const content = (event.data as { content?: string }).content;
+          if (typeof content === "string" && content.trim()) lastMessage = content;
+        }
         if (["assistant.turn_start", "assistant.turn_end", "assistant.message", "assistant.message_delta",
           "assistant.reasoning_delta", "tool.execution_start", "tool.execution_complete"].includes(event.type)) activity();
         if (["assistant.message_delta", "assistant.reasoning_delta"].includes(event.type) && Date.now() - lastProgress >= 2000) {
@@ -243,10 +248,10 @@ export class CopilotAdapter implements AiProvider {
         .catch(error => { throw limitError ?? timeoutError ?? error; });
       request.signal.throwIfAborted();
       if (limitError) throw limitError;
-      if (!response?.data.content) throw new Error("Copilot returned no answer.");
-      const parsed = parseAgentResponse(response.data.content);
-      if (parsed.answer.length > 20000) throw new Error("Copilot response exceeded the chat limit.");
-      return parsed;
+      // Some models (e.g. Claude) end with an empty message after a final tool round; use the last real answer.
+      const content = response?.data.content?.trim() ? response.data.content : lastMessage;
+      if (!content) throw new Error("Copilot returned no answer.");
+      return parseAgentResponse(content);
     } finally {
       clearTimeout(idleTimer);
       clearTimeout(deadlineTimer);

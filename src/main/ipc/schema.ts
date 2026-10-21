@@ -29,6 +29,7 @@ const settingsPatch = z.object({
   backgroundAi: z.boolean().optional(),
   syncPaused: z.boolean().optional(),
   browserBackgroundCapture: z.boolean().optional(),
+  chatAskMailRefresh: z.boolean().optional(),
   browserFullMailDownload: z.boolean().optional(),
   browserAttachmentDownload: z.boolean().optional(),
   browserMailTransport: z.enum(["auto", "companion"]).optional(),

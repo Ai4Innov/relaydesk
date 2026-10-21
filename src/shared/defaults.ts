@@ -14,6 +14,7 @@ export const defaultSettings: Settings = {
   notifications: false,
   refreshIntervalSeconds: 60,
   browserBackgroundCapture: true,
+  chatAskMailRefresh: false,
   browserFullMailDownload: true,
   browserAttachmentDownload: true,
   playwrightMailEnabled: false,

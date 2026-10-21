@@ -51,6 +51,14 @@ export function chatFailureMessage(error: unknown): string {
     return "The AI provider did not respond before the connection timed out. Retry this request or reconnect it in Settings. No pending action was executed.";
   if (/returned no answer/i.test(message))
     return "The AI provider returned no final answer. Retry this request; no pending action was executed.";
+  if (/context.{0,20}(length|window|limit)|token.{0,30}(limit|exceed)|too (long|large)|max.?tokens|exceeds?.{0,20}limit|output limit|\b413\b/i.test(message))
+    return "This request was too large for the selected model (long conversation or large documents). Start a new chat, ask a narrower question, or pick a model with a larger context. No pending action was executed.";
+  if (/rate.?limit|\b429\b|too many requests/i.test(message))
+    return "The AI provider is rate-limiting requests. Wait a minute and retry. No pending action was executed.";
+  if (/\b(401|403)\b|unauthori[sz]ed|not authenticated|forbidden|(sign.?in|login) required/i.test(message))
+    return "The AI provider rejected the sign-in. Reconnect it in Settings → AI provider, then retry. No pending action was executed.";
+  if (/\b5\d\d\b|overloaded|unavailable|ECONNRESET|ECONNREFUSED|ENOTFOUND|fetch failed|socket|network|connection (closed|lost|reset)|disconnected/i.test(message))
+    return "The AI provider was temporarily unreachable. Retry this request; no pending action was executed.";
   return "The AI provider could not complete this request. Check the selected model, connection, AI budget and source permissions, or ask a narrower question. No pending action was executed.";
 }
 // The installed SDK accepts JSON Schema or Zod 4; IPC uses Zod 3. Keep validation
@@ -462,7 +470,8 @@ export class ChatService {
           permission: request => this.permissionRequest(turn, conversationId, request, directory, approvedReads)
         } : undefined });
       this.guard(turn);
-      if (result.citationIds.some(id => !turn.citations.some(c => c.id === id))) throw new Error("The AI provider cited evidence it did not read.");
+      // Citations are only ever shown from evidence the tools actually read; ignore any other IDs the model lists.
+      result.citationIds = result.citationIds.filter(id => turn.citations.some(c => c.id === id));
       if (requiresFreshMail && !turn.mailFreshness?.length) {
         turn.text = "Latest emails were not verified: no permitted inbox refresh completed during this request. I cannot provide a current inbox assessment from the older conversation alone. Check the account's selected sources and AI access, then retry.";
         turn.status = "complete";
@@ -482,6 +491,8 @@ export class ChatService {
       turn.text = warning + result.answer; turn.status = "complete";
     } catch (error) {
       // Never persist SDK errors or tool arguments: they can contain private source text.
+      // A short console line (not written to disk by the packaged app) helps diagnose provider failures.
+      if (!controller.signal.aborted) console.warn("[chat] request failed:", error instanceof Error ? `${error.name}: ${error.message.slice(0, 300)}` : typeof error);
       const limit = controller.signal.reason instanceof ChatLimitError ? controller.signal.reason :
         error instanceof ChatLimitError ? error : undefined;
       turn.status = limit ? "error" : controller.signal.aborted ? "cancelled" : "error";

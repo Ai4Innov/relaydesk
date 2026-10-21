@@ -28,8 +28,26 @@ describe("parseAgentResponse", () => {
     expect(parseAgentResponse("```json\n{\"answer\":\"Hi\",\"priority\":null,\"reason\":null,\"needsReply\":null,\"citationIds\":[]}\n```"))
       .toEqual({ answer: "Hi", citationIds: [] });
   });
-  it("rejects unexpected keys", () => {
-    expect(() => parseAgentResponse("{\"answer\":\"Hi\",\"citationIds\":[],\"run\":\"rm\"}")).toThrow();
+  it("discards unexpected keys instead of failing (they are never executed)", () => {
+    expect(parseAgentResponse("{\"answer\":\"Hi\",\"citationIds\":[],\"run\":\"rm\"}")).toEqual({ answer: "Hi", citationIds: [] });
+  });
+  it("normalizes common model variations", () => {
+    expect(parseAgentResponse("Here you go:\n{\"answer\":\"Hi\",\"citationIds\":\"c1\",\"priority\":\"URGENT\",\"reason\":\"" + "r".repeat(3000) + "\"}"))
+      .toEqual({ answer: "Hi", citationIds: ["c1"], priority: "urgent", reason: "r".repeat(2000) });
+    expect(parseAgentResponse("{\"response\":\"Hello\",\"citations\":[{\"id\":\"a\"},\"a\",\"b\"],\"priority\":\"high\"}"))
+      .toEqual({ answer: "Hello", citationIds: ["a", "b"] });
+    expect(parseAgentResponse(JSON.stringify({ answer: "x", citationIds: Array.from({ length: 40 }, (_, i) => `c${i}`) })).citationIds).toHaveLength(30);
+  });
+  it("keeps plain prose and recovers answers from cut-off JSON", () => {
+    expect(parseAgentResponse("No, I did not assume that {see the budget}.")).toEqual({ answer: "No, I did not assume that {see the budget}.", citationIds: [] });
+    expect(parseAgentResponse("{\"answer\":\"Line one\\nLine \\\"two\\\"\",\"citationIds\":[\"c1\"")).toEqual({ answer: "Line one\nLine \"two\"", citationIds: [] });
+    expect(() => parseAgentResponse("   ")).toThrow(/no answer/);
+    expect(() => parseAgentResponse("{\"citationIds\":[]}")).toThrow(/no answer/);
+  });
+  it("shortens over-long answers with a visible note instead of failing", () => {
+    const parsed = parseAgentResponse(JSON.stringify({ answer: "a".repeat(30000), citationIds: [] }));
+    expect(parsed.answer.length).toBe(20000);
+    expect(parsed.answer).toContain("Answer shortened");
   });
 });
 

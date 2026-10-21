@@ -203,7 +203,7 @@ export function Chat({ data, run, navigate }: ChatProps) {
   const send = () => {
     if (!canSend || requestLock.current || pendingQuestionRef.current) return;
     const question = { draft, selectedId: selected, conversationId: conversation?.id, model, scope: mailScope };
-    if (!hasMailSources || skipsChatMailRefresh(question.draft)) {
+    if (!data.settings.chatAskMailRefresh || !hasMailSources || skipsChatMailRefresh(question.draft)) {
       void submitQuestion(question, "local");
       return;
     }
@@ -268,7 +268,7 @@ export function Chat({ data, run, navigate }: ChatProps) {
         <div role="log" aria-label="Chat messages" aria-live="polite" aria-relevant="additions text" className="chat-turns">
           {conversation?.turns.map(turn => <article key={turn.id} className={`chat-turn chat-turn-${turn.role}`} aria-label={`${turn.role === "user" ? "You" : "Assistant"} message`}>
             <div className="chat-turn-meta"><span className="chat-avatar">{turn.role === "user" ? "Y" : <Sparkles size={15}/>}</span><strong>{turn.role === "user" ? "You" : "Assistant"}</strong>{turn.model && <span>{data.models.find(item => item.id === turn.model)?.name ?? turn.model}</span>}<time dateTime={turn.createdAt}>{new Date(turn.createdAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}</time></div>
-            {turn.role === "assistant" && turn.mailRefresh === "local" && <p className="chat-mail-provenance"><Inbox size={14}/><span>Using saved messages · No download requested for this answer. Newer mail may not be included.</span></p>}
+            {turn.role === "assistant" && turn.mailRefresh === "local" && data.settings.chatAskMailRefresh && <p className="chat-mail-provenance"><Inbox size={14}/><span>Using saved messages · No download requested for this answer. Newer mail may not be included.</span></p>}
             {turn.mailRefresh !== "local" && !!turn.mailFreshness?.length && <details className="citations" aria-label="Inbox freshness">
               <summary>{turn.mailFreshness.every(result => result.status === "fresh") ? "Inbox refreshed before this answer" : "Inbox refresh incomplete - cached evidence may be stale"}</summary>
               {turn.mailFreshness.flatMap(result => result.sources.map(source => <div key={source.sourceId}>

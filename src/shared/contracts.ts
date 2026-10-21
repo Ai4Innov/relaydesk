@@ -243,6 +243,8 @@ export interface Settings {
   notifications: boolean;
   refreshIntervalSeconds: number;
   browserBackgroundCapture: boolean;
+  /** Ask before each chat question whether to download the latest mail first. */
+  chatAskMailRefresh: boolean;
   browserFullMailDownload: boolean;
   browserAttachmentDownload: boolean;
   playwrightMailEnabled: boolean;

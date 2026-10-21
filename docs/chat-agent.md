@@ -12,7 +12,7 @@ The agent can answer general questions and inspect:
 
 - Selected mail sources from connected, consented, AI-enabled accounts.
 - Recent messages with account/source filters and pagination, search excerpts, and explicitly paged message bodies.
-- Optional inbox refresh and new/changed full-email downloads after the user chooses **Yes, download latest**, scoped to selected, AI-permitted mail sources.
+- Optional inbox refresh and new/changed full-email downloads after the user chooses **Yes, download latest**, scoped to selected, AI-permitted mail sources. This pre-question prompt is off by default (answers use already-saved messages, kept current by background refresh); turn it on in **Settings → AI & assistant → AI usage → Ask to download latest mail before answering**.
 - Already-indexed attachment text; chat cannot download or import a file.
 - Permitted local tasks, API calendar events, and read-only browser calendar captures.
 - Local calendar insights: exact conflicts, explicitly provisional browser overlaps, and title-based importance suggestions, using only AI-permitted calendars.
