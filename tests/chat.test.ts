@@ -652,17 +652,17 @@ describe("chat agent tools, consent and encrypted checkpoint state", () => {
     await expect(f.chat.command({ type: "chat.send", text: "x".repeat(CHAT_MESSAGE_MAX + 1) })).rejects.toThrow();
     expect(f.hooks.generate).toHaveBeenCalledOnce();
   });
-  it("drops hallucinated citations and rejects excessive tool loops", async () => {
+  it("drops hallucinated citations and allows many tool calls", async () => {
     const f = fixture();
     f.hooks.generate.mockResolvedValueOnce({ answer: "Claim", citationIds: ["never-read"] });
     await f.send(); expect(f.last().status).toBe("complete");
     expect(f.last().citations.some(citation => citation.id === "never-read")).toBe(false);
     f.hooks.generate.mockImplementation(async request => {
-      for (let i = 0; i < 17; i++) await call(request.tools, "workspace_status");
+      for (let i = 0; i < 40; i++) await call(request.tools, "workspace_status");
       return { answer: "Loop", citationIds: [] };
     });
-    await f.send(); expect(f.last().status).toBe("error");
-    expect(f.last().text).toContain("tool-call limit (16)");
+    await f.send(); expect(f.last().status).toBe("complete");
+    expect(f.last().text).toContain("Loop");
   });
   it("purges forgotten account/source conversations from the encrypted checkpoint, including prior redaction placeholders", async () => {
     const f = fixture();
@@ -759,10 +759,10 @@ describe("chat agent tools, consent and encrypted checkpoint state", () => {
     f.vault.put("messages", "m1", { ...f.message, body: "X".repeat(10000) });
     f.hooks.generate.mockImplementation(async request => {
       const results = [];
-      for (let i = 0; i < 16; i++) results.push(await call(request.tools, "read_message", { messageId: "m1" }));
+      for (let i = 0; i < 40; i++) results.push(await call(request.tools, "read_message", { messageId: "m1" }));
       const withheld = results.filter(result => result.budgetExhausted);
       expect(withheld.length).toBeGreaterThan(0);
-      expect(results.findIndex(result => result.budgetExhausted)).toBeGreaterThan(10);
+      expect(results.findIndex(result => result.budgetExhausted)).toBeGreaterThan(20);
       expect(withheld[0].error).toContain("Answer now from the evidence already gathered");
       expect(JSON.stringify(withheld)).not.toContain("XXXX");
       return { answer: "Answer from gathered evidence", citationIds: [] };

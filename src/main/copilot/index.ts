@@ -4,7 +4,7 @@ import type { Citation, ModelInfo, Snapshot } from "../../shared/contracts";
 import { MemorySessionFs } from "./memory-fs";
 import { WorkspaceSessionFs } from "./workspace-fs";
 import { host, type PlatformProfile } from "../platform";
-import { CHAT_PROMPT_MAX, ChatLimitError, ChatTimeoutError } from "../../shared/chat";
+import { CHAT_PROMPT_MAX, ChatTimeoutError } from "../../shared/chat";
 import { CHAT_CORE_INSTRUCTIONS, CHAT_IDLE_TIMEOUT_MS, CHAT_MAX_RUNTIME_MS, GENERATE_INSTRUCTIONS, generationPrompt, parseAgentResponse,
   type AgentResponse, type AiProvider, type AppTool, type ChatAgentRequest, type ChatWorkspace, type WorkspacePermissionRequest } from "../ai/agent";
 
@@ -191,8 +191,6 @@ export class CopilotAdapter implements AiProvider {
       this.active = session;
       await session.rpc.options.update({ installedPlugins: [] });
       request.signal.throwIfAborted();
-      let turns = 0;
-      let limitError: Error | undefined;
       let timeoutError: ChatTimeoutError | undefined;
       let rejectTimeout!: (error: ChatTimeoutError) => void;
       const timedOut = new Promise<never>((_resolve, reject) => { rejectTimeout = reject; });
@@ -211,7 +209,6 @@ export class CopilotAdapter implements AiProvider {
       deadlineTimer = setTimeout(() => expire("deadline"), CHAT_MAX_RUNTIME_MS);
       let lastProgress = 0;
       let lastMessage = "";
-      const maxTurns = workspace ? 48 : 24;
       unsubscribe = session.on(event => {
         if (event.type === "assistant.message") {
           const content = (event.data as { content?: string }).content;
@@ -230,10 +227,7 @@ export class CopilotAdapter implements AiProvider {
           if (label[name]) request.progress(label[name]);
         }
         if (event.type === "assistant.turn_start") {
-          if (++turns > maxTurns) {
-            limitError = new ChatLimitError(`Chat agent-round limit (${maxTurns}) reached. Ask a narrower question.`);
-            void session?.abort().catch(() => undefined);
-          } else request.progress("Copilot is thinking…");
+          request.progress("Copilot is thinking…");
         }
       });
       const aborted = new Promise<never>((_resolve, reject) => {
@@ -245,9 +239,8 @@ export class CopilotAdapter implements AiProvider {
         if (request.signal.aborted) abortListener();
       });
       const response = await Promise.race([session.sendAndWait({ prompt: request.prompt }, CHAT_MAX_RUNTIME_MS), aborted, timedOut])
-        .catch(error => { throw limitError ?? timeoutError ?? error; });
+        .catch(error => { throw timeoutError ?? error; });
       request.signal.throwIfAborted();
-      if (limitError) throw limitError;
       // Some models (e.g. Claude) end with an empty message after a final tool round; use the last real answer.
       const content = response?.data.content?.trim() ? response.data.content : lastMessage;
       if (!content) throw new Error("Copilot returned no answer.");

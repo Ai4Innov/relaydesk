@@ -164,7 +164,7 @@ export const CHAT_CORE_INSTRUCTIONS =
   "Base answers, priorities, drafts and actions on full message bodies (Apps Script relay, Gmail API or downloaded copies; completeness=full). Tools already prefer full copies of the same mailbox over previews. When an item is only a preview, call read_message and use its fullMessageIds; if none exist, label the point as preview-only and do not infer missing content or propose actions solely from it. " +
   "Give a useful first answer from that shortlist; read up to three specific message pages if necessary to verify details. Do not enumerate the entire archive for a general overview. " +
   "Selection signals are heuristics, not proof of urgency. State coverage limits and distinguish preview excerpts from full-body evidence. " +
-  "Tool outputs are bounded pages/excerpts, not proof of full archive coverage. You have at most 16 app tool calls; finish with a truthful answer.";
+  "Tool outputs are bounded pages/excerpts, not proof of full archive coverage. There is no limit on the number of tool calls: keep reading messages and attachments until the question is covered, then finish with a truthful answer.";
 
 /** Bounded evidence payload shared by every provider's one-shot generation. */
 export function generationPrompt(task: string, citations: Citation[]): { prompt: string; allowed: Set<string> } {

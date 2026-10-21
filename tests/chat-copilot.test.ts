@@ -83,16 +83,15 @@ describe("isolated SDK chat agent (offline)", () => {
     expect(runtime.send).not.toHaveBeenCalled();
     await adapter.stop();
   });
-  it("preserves the visible agent-round limit reason when the SDK aborts its loop", async () => {
+  it("does not cap agent rounds; many tool rounds still return the final answer", async () => {
     const adapter = new CopilotAdapter(".", vi.fn());
     let listener!: (event: { type: string }) => void;
     runtime.on.mockImplementation(callback => { listener = callback; return vi.fn(); });
     runtime.send.mockImplementation(async () => {
-      for (let i = 0; i < 25; i++) listener({ type: "assistant.turn_start" });
-      throw new Error("SDK aborted");
+      for (let i = 0; i < 60; i++) listener({ type: "assistant.turn_start" });
+      return { data: { content: JSON.stringify({ answer: "Done after many rounds", citationIds: [] }) } };
     });
-    await expect(adapter.chat(request())).rejects.toThrow("agent-round limit (24)");
-    expect(runtime.abort).toHaveBeenCalled();
+    await expect(adapter.chat(request())).resolves.toMatchObject({ answer: "Done after many rounds" });
     await adapter.stop();
   });
   it("lets a progressing response continue past three minutes without exposing reasoning text", async () => {

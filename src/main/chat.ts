@@ -5,7 +5,7 @@ import type { AppTool as Tool, WorkspacePermissionRequest as PermissionRequest }
 import { z } from "zod";
 import type { Account, Approval, Attachment, CalendarEvent, Citation, Collection, Command, CommandResult, Draft, Message, Settings, Snapshot, Source } from "../shared/contracts";
 import { CHAT_MESSAGE_MAX, CHAT_PROMPT_MAX, ChatLimitError, chatFileOpenable, ChatTimeoutError, skipsChatMailRefresh, type ChatAction, type ChatCommand, type ChatConversation, type ChatPermission, type ChatState, type ChatTurn } from "../shared/chat";
-import { CHAT_TOOL_CALL_MAX, ToolOutputBudget, toolErrorResult } from "./chat-tool-budget";
+import { ToolOutputBudget, toolErrorResult } from "./chat-tool-budget";
 import { createDocument, DOCUMENT_FORMATS } from "./documents";
 import { insidePath } from "./copilot/workspace-fs";
 import type { TaskItem } from "../shared/productivity";
@@ -536,7 +536,6 @@ export class ChatService {
     for (const citation of task.citations) this.addCitation(turn, citation);
   }
   private tools(turn: StoredTurn, activity: () => void = () => {}): Tool[] {
-    let calls = 0;
     const outputBudget = new ToolOutputBudget();
     const freshness = new Map<string, Promise<MailFreshnessResult>>();
     const refresh = async (args: { accountId?: string; sourceId?: string }, force: boolean) => {
@@ -593,7 +592,6 @@ export class ChatService {
       name, description, parameters: toolParameters(schema), skipPermission: true, defer: "never",
       handler: async args => {
         this.guard(turn);
-        if (++calls > CHAT_TOOL_CALL_MAX) this.limit(`Chat tool-call limit (${CHAT_TOOL_CALL_MAX}) reached. Ask a narrower question; no pending action was executed.`);
         turn.progress = description; this.persist();
         try {
           if (JSON.stringify(args).length > maxArgs) this.limit(`Chat tool argument limit (${maxArgs.toLocaleString("en-US")} characters) exceeded. Ask for a smaller operation.`);

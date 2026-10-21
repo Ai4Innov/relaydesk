@@ -1,6 +1,6 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { Citation, ModelInfo, Snapshot } from "../../shared/contracts";
-import { CHAT_PROMPT_MAX, ChatLimitError, ChatTimeoutError } from "../../shared/chat";
+import { CHAT_PROMPT_MAX, ChatTimeoutError } from "../../shared/chat";
 import { CHAT_CORE_INSTRUCTIONS, ChatTimers, GENERATE_INSTRUCTIONS, generationPrompt, parseAgentResponse, toolResultText,
   type AgentResponse, type AiProvider, type AppTool, type ChatAgentRequest } from "./agent";
 import { WORKSPACE_TOOL_PROGRESS, appWorkspacePrompt, workspaceTools } from "./workspace-tools";
@@ -108,8 +108,8 @@ export class ClaudeAdapter implements AiProvider {
         input_schema: { type: "object" as const, ...(tool.parameters ?? {}) } }));
       const system = [{ type: "text" as const, text: claudeChatSystemPrompt(request), cache_control: { type: "ephemeral" as const } }];
       const messages: Anthropic.MessageParam[] = [{ role: "user", content: request.prompt }];
-      const maxTurns = request.workspace ? 48 : 24;
-      for (let turn = 0; turn < maxTurns; turn++) {
+      // No round cap: the idle timeout and overall deadline bound the loop.
+      for (;;) {
         request.progress("Claude is thinking…");
         const response = await (await this.api()).messages.create({ model: request.model, max_tokens: OUTPUT_TOKENS, system, tools: definitions, messages },
           { signal: controller.signal });
@@ -138,7 +138,6 @@ export class ClaudeAdapter implements AiProvider {
         if (parsed.answer.length > 20000) throw new Error("Claude response exceeded the chat limit.");
         return parsed;
       }
-      throw new ChatLimitError(`Chat agent-round limit (${maxTurns}) reached. Ask a narrower question.`);
     } catch (error) {
       if (request.signal.aborted) throw new Error("Chat cancelled.");
       throw timeoutError ?? error;

@@ -3,7 +3,7 @@ import type { MailFreshnessResult } from "./mail-freshness";
 
 export const CHAT_MESSAGE_MAX = 12_000;
 export const CHAT_PROMPT_MAX = 100_000;
-export const CHAT_TOOL_OUTPUT_BUDGET = 160_000;
+export const CHAT_TOOL_OUTPUT_BUDGET = 320_000;
 export type ChatMailRefresh = "download" | "local";
 
 export function skipsChatMailRefresh(text: string): boolean {

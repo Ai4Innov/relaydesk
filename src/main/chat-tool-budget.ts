@@ -2,8 +2,6 @@ import { CHAT_TOOL_OUTPUT_BUDGET } from "../shared/chat";
 
 /** Maximum serialized size of a single tool result handed to the model. */
 export const CHAT_TOOL_RESULT_MAX = 24_000;
-/** Maximum number of tool calls in one chat turn. */
-export const CHAT_TOOL_CALL_MAX = 16;
 
 /** Tool failures whose message is safe and actionable enough to show the model verbatim. */
 const USER_VISIBLE_TOOL_ERROR = /^(Native browser draft saves|Select an authorized API|This draft cannot|This action is too large|Review at least|Gmail handoff|Provide sheets|Choose a valid file name|Too many files|Documents can only)/;

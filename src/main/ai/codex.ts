@@ -246,17 +246,11 @@ export class CodexAdapter implements AiProvider {
     request.signal.addEventListener("abort", forward, { once: true });
     const unsubscribe = request.onToolActivity?.(() => timers.activity());
     let bridge: McpToolBridge | undefined;
-    let calls = 0;
-    const maxCalls = request.workspace ? 48 : 24;
     try {
       await this.ready(request.model);
       const tools: AppTool[] = [...request.tools, ...(request.workspace ? workspaceTools(request.workspace) : [])];
       bridge = await McpToolBridge.start(tools, {
         run: (name, work) => {
-          if (++calls > maxCalls) {
-            controller.abort(new ChatLimitError(`Chat tool-call limit (${maxCalls}) reached. Ask a narrower question.`));
-            throw new Error("Tool-call limit reached.");
-          }
           if (WORKSPACE_TOOL_PROGRESS[name]) request.progress(WORKSPACE_TOOL_PROGRESS[name]);
           return timers.hold(work);
         }
