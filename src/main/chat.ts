@@ -123,6 +123,7 @@ interface Hooks {
   workspaceDirectory?(): string;
   knowledge?: Pick<KnowledgeLibrary, "list" | "search" | "read">;
   openPath?(path: string, reveal: boolean): Promise<void>;
+  renderPdf?(html: string): Promise<Buffer>;
   attention?(title: string, body: string): void;
 }
 async function scanWorkspace(directory: string): Promise<Map<string, { mtime: number; size: number }>> {
@@ -974,7 +975,7 @@ export class ChatService {
         sheets: z.array(z.object({ name: z.string().max(31), rows: z.array(z.array(z.string().max(5000)).max(200)).max(5000) }).strict()).max(20).optional(),
         overwrite: z.boolean().optional()
       }).strict(), async args => {
-        const created = await createDocument(directory, args);
+        const created = await createDocument(directory, args, { renderPdf: this.hooks.renderPdf });
         this.addFile(turn, created.path, created.size);
         return { saved: true, path: created.path, fileName: created.name, format: created.format, bytes: created.size,
           note: "The app shows Open and Show in folder buttons for this file. Mention the saved path in your answer." };

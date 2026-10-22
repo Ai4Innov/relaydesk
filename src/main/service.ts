@@ -41,6 +41,8 @@ import { moveBrowserCalendarEvent } from "./commands/browser-calendar";
 import { homedir } from "node:os";
 import { fullAccessByDefault } from "./access";
 
+const TOOL_ACCESS_REVISION = 1;
+
 interface Host {
   changed(): void;
   openExternal(url: string): Promise<void>;
@@ -61,6 +63,8 @@ interface Host {
   openBrowserExtension?(): Promise<void>;
   documentsDirectory?: string;
   openPath?(path: string, reveal: boolean): Promise<void>;
+  /** Renders trusted, self-contained HTML to PDF (desktop only). */
+  renderPdf?(html: string): Promise<Buffer>;
   chooseFolder?(title: string, defaultPath: string): Promise<string | undefined>;
 }
 interface BrowserDraftContext {
@@ -180,6 +184,7 @@ export class RelayService {
       refreshMail: request => this.refreshMail(request),
       generate: request => this.runAi(() => this.ai.chat(request)),
       workspaceDirectory: () => this.assistantWorkspace(),
+      renderPdf: this.host.renderPdf ? html => this.host.renderPdf!(html) : undefined,
       knowledge: this.knowledge,
       openPath: async (path, reveal) => {
         if (!this.host.openPath) throw new Error("Opening files requires the desktop application.");
@@ -260,7 +265,12 @@ export class RelayService {
         finally { this.browserCaptures--; release(); }
       }, () => this.stopped || this.restoring, () => this.settings().syncPaused, () => this.documentAccessRevision);
     }
-    if (!vault.get<Settings>("settings", "preferences")) vault.put("settings", "preferences", defaultSettings);
+    const storedSettings = vault.get<Settings>("settings", "preferences");
+    if (!storedSettings) vault.put("settings", "preferences", { ...defaultSettings, toolAccessRevision: TOOL_ACCESS_REVISION });
+    else if ((storedSettings.toolAccessRevision ?? 0) < TOOL_ACCESS_REVISION)
+      // Older builds shipped commands and web access switched off; they now default to per-request approval cards.
+      vault.put("settings", "preferences", { ...storedSettings, assistantTools: true,
+        assistantShell: "ask", assistantWeb: "ask", toolAccessRevision: TOOL_ACCESS_REVISION });
     this.mailArchive = new BrowserMailArchiveQueue(vault, this.mailReader, {
       enabled: () => this.settings().browserFullMailDownload, paused: () => this.settings().syncPaused,
       maintenance: () => this.stopped || this.restoring || this.freshnessActive,

@@ -35,6 +35,18 @@ describe("assistant document generation", () => {
     expect(second.path).not.toBe(first.path);
     expect(await readFile(first.path, "utf8")).toContain("one");
   });
+  it("renders PDFs through the desktop renderer from escaped, print-styled HTML", async () => {
+    const dir = await temp();
+    let rendered = "";
+    const created = await createDocument(dir, { fileName: "brief", format: "pdf", title: "Brief", content: markdown + "\n\n<script>alert(1)</script>" },
+      { renderPdf: async html => { rendered = html; return Buffer.from("%PDF-1.7 synthetic"); } });
+    expect(created.name).toBe("brief.pdf");
+    expect((await readFile(created.path)).subarray(0, 4).toString()).toBe("%PDF");
+    expect(rendered).toContain("<h1>Brief</h1>");
+    expect(rendered).toContain("break-inside:avoid");
+    expect(rendered).not.toContain("<script>");
+    await expect(createDocument(dir, { fileName: "x", format: "pdf", content: "x" })).rejects.toThrow("desktop app");
+  });
 });
 
 describe("workspace session filesystem", () => {

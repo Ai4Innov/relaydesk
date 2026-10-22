@@ -386,7 +386,7 @@ function Assistant({ data, run, busy }: Props) {
     </section>
     <section className="card settings-section" aria-label="Assistant tools">
       <div className="settings-heading"><div className="setting-icon"><Wrench/></div><div><h2>Assistant tools</h2>
-        <p>Let chat create files (Word, Excel, PowerPoint, Markdown…), run commands and fetch web pages, like Copilot CLI. Files stay in the workspace folder; commands and web requests always ask you first.</p></div></div>
+        <p>Let chat create files (Word, PDF, Excel, PowerPoint, Markdown…), run commands and fetch web pages, like Copilot CLI. Files stay in the workspace folder; commands and web requests always ask you first.</p></div></div>
       <div className="setting-row compact"><div><strong>Enable assistant tools</strong><p>Turn off to keep chat strictly read-only over your communications.</p></div>
         <Toggle label="Enable assistant tools" checked={tools} disabled={busy} onChange={assistantTools => update({ assistantTools })}/></div>
       <div className="setting-row compact"><div><strong><FolderOpen size={14}/> Workspace folder</strong><p className="mono-path">{data.assistantWorkspace || data.settings.assistantWorkspaceDir || OS_TEXT[hostOS()].documents}</p></div>

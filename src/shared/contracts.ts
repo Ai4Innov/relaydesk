@@ -263,6 +263,8 @@ export interface Settings {
   fullAccessByDefault: boolean;
   /** Activity approvals happen automatically: attachment downloads/processing and calendar changes without attendees. */
   autoApprove: boolean;
+  /** One-time settings migrations already applied (internal). */
+  toolAccessRevision?: number;
 }
 export interface GmailRelayPublicStatus {
   sourceId: string;

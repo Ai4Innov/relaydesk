@@ -36,14 +36,15 @@ account/source permissions and provider-write approvals remain unchanged.
 ### Assistant tools (files, documents, shell, web)
 
 Chat can also act like a native coding agent (with any provider): it can read and write files in its
-workspace folder (default `Documents\Relay Desk`), create real **Word (.docx), Excel
-(.xlsx) and PowerPoint (.pptx)** files, run PowerShell commands and fetch web pages.
+workspace folder (default `Documents\Relay Desk`), create real **Word (.docx), PDF (.pdf), Excel
+(.xlsx) and PowerPoint (.pptx)** files (PDFs are rendered by the app itself, no shell needed), run PowerShell commands and fetch web pages.
 Created files appear as cards with **Open** and **Show in folder**; **Open** is only offered
 for passive document/image formats, so a script-like file (for example `.hta` or `.bat`)
 can only be shown in its folder, never launched from the app. Reads outside the
 workspace, every shell command and every web request show an approval card first
 (**Allow once**, **Allow for this response** for shell/web, or **Deny**). Configure the
 workspace folder and shell/web policy (ask / off) in **Settings → AI & assistant**.
+Shell and web are set to **Ask every time** by default (installs from older versions that had them off are switched to ask once).
 Email content never triggers these tools on its own, and Relay Desk never sends email.
 
 ### Folders and shared links

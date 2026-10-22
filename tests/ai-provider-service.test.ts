@@ -73,6 +73,17 @@ function fixture() {
 }
 
 describe("AI provider selection", () => {
+  it("migrates old 'off' tool defaults to approval cards once, then respects the user's choice", async () => {
+    const vault = new MemoryVault();
+    vault.put("settings", "preferences", { ...defaultSettings, toolAccessRevision: undefined, assistantShell: "off", assistantWeb: "off", assistantTools: false });
+    const host = { changed: vi.fn(), openExternal: vi.fn(), copy: vi.fn(), loginCopilot: vi.fn(), loginCodex: vi.fn(async () => {}),
+      backupPath: vi.fn(), restorePath: vi.fn(), settingsChanged: vi.fn(), notify: vi.fn() };
+    services.push(new RelayService(vault as unknown as Vault, ".", host));
+    expect(vault.get<Settings>("settings", "preferences")).toMatchObject({ assistantTools: true, assistantShell: "ask", assistantWeb: "ask", toolAccessRevision: 1 });
+    vault.put("settings", "preferences", { ...vault.get<Settings>("settings", "preferences")!, assistantShell: "off" });
+    services.push(new RelayService(vault as unknown as Vault, ".", host));
+    expect(vault.get<Settings>("settings", "preferences")!.assistantShell).toBe("off");
+  });
   it("switches providers, remembers each provider's model and reports per-provider status", async () => {
     const { service, settings } = fixture();
     await service.command({ type: "ai.provider", provider: "codex" });

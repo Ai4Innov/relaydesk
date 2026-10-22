@@ -2,7 +2,7 @@ import { mkdir, stat, writeFile } from "node:fs/promises";
 import { host } from "./platform";
 import { insidePath } from "./copilot/workspace-fs";
 
-export const DOCUMENT_FORMATS = ["docx", "xlsx", "pptx", "md", "txt", "csv", "html"] as const;
+export const DOCUMENT_FORMATS = ["docx", "pdf", "xlsx", "pptx", "md", "txt", "csv", "html"] as const;
 type DocumentFormat = typeof DOCUMENT_FORMATS[number];
 interface DocumentRequest {
   fileName: string;
@@ -199,7 +199,7 @@ async function pptx(title: string | undefined, markdown: string): Promise<Buffer
   return await deck.write({ outputType: "nodebuffer" }) as Buffer;
 }
 
-function html(title: string | undefined, markdown: string): string {
+function html(title: string | undefined, markdown: string, print = false): string {
   const escape = (value: string) => value.replace(/[&<>"]/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" })[character]!);
   const inline = (parts: Inline[]) => parts.map(part => {
     const text = escape(part.text);
@@ -219,7 +219,7 @@ function html(title: string | undefined, markdown: string): string {
     else body.push(`<table>${block.rows.map((row, index) => `<tr>${row.map(cell => index === 0 ? `<th>${inline(cell)}</th>` : `<td>${inline(cell)}</td>`).join("")}</tr>`).join("")}</table>`);
   }
   if (list) body.push(`</${list}>`);
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${escape(title ?? "Document")}</title><style>body{font-family:Segoe UI,Arial,sans-serif;max-width:860px;margin:40px auto;line-height:1.5;color:#1f2937}table{border-collapse:collapse}th,td{border:1px solid #d1d5db;padding:6px 10px}th{background:#f3f4f6}</style></head><body>${title ? `<h1>${escape(title)}</h1>` : ""}${body.join("\n")}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${escape(title ?? "Document")}</title><style>body{font-family:Segoe UI,Arial,sans-serif;max-width:860px;margin:${print ? "0 auto" : "40px auto"};line-height:1.5;color:#1f2937}table{border-collapse:collapse}th,td{border:1px solid #d1d5db;padding:6px 10px}th{background:#f3f4f6}${print ? "h1,h2,h3{break-after:avoid}tr,pre{break-inside:avoid}pre{white-space:pre-wrap}" : ""}</style></head><body>${title ? `<h1>${escape(title)}</h1>` : ""}${body.join("\n")}</body></html>`;
 }
 
 function csv(sheets: DocumentRequest["sheets"], markdown: string): string {
@@ -238,7 +238,10 @@ export function safeDocumentName(fileName: string, format: DocumentFormat): stri
   return `${base}.${format}`;
 }
 
-export async function createDocument(workspace: string, request: DocumentRequest): Promise<CreatedDocument> {
+export interface DocumentRenderers { renderPdf?(html: string): Promise<Buffer> }
+
+export async function createDocument(workspace: string, request: DocumentRequest, renderers: DocumentRenderers = {}): Promise<CreatedDocument> {
+  if (request.format === "pdf" && !renderers.renderPdf) throw new Error("Documents can only be exported to PDF in the desktop app.");
   const name = safeDocumentName(request.fileName, request.format);
   await mkdir(workspace, { recursive: true });
   let path = host.path.join(workspace, name);
@@ -251,6 +254,7 @@ export async function createDocument(workspace: string, request: DocumentRequest
   if (!insidePath(workspace, path)) throw new Error("Documents can only be created in the Relay Desk workspace.");
   const content = request.content ?? "";
   const bytes = request.format === "docx" ? await docx(request.title, content)
+    : request.format === "pdf" ? await renderers.renderPdf!(html(request.title, content, true))
     : request.format === "xlsx" ? await xlsx(request.title, request.sheets, content)
     : request.format === "pptx" ? await pptx(request.title, content)
     : Buffer.from(request.format === "html" ? html(request.title, content)

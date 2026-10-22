@@ -133,6 +133,17 @@ async function start(): Promise<void> {
       const error = await shell.openPath(path);
       if (error) throw new Error(`${host.name} could not open this file.`);
     },
+    renderPdf: async html => {
+      // Isolated, script-free, offline window: the HTML comes from escaped Markdown, never from the network.
+      const pdfWindow = new BrowserWindow({ show: false, width: 900, height: 1200, webPreferences: {
+        javascript: false, sandbox: true, contextIsolation: true, nodeIntegration: false, partition: "relay-pdf-render", spellcheck: false } });
+      pdfWindow.webContents.session.webRequest.onBeforeRequest((details, callback) => callback({ cancel: !details.url.startsWith("data:") }));
+      pdfWindow.webContents.on("will-navigate", event => event.preventDefault());
+      try {
+        await pdfWindow.loadURL(`data:text/html;charset=utf-8;base64,${Buffer.from(html, "utf8").toString("base64")}`);
+        return await pdfWindow.webContents.printToPDF({ printBackground: true, pageSize: "A4", margins: { top: 0.6, bottom: 0.6, left: 0.6, right: 0.6 } });
+      } finally { pdfWindow.destroy(); }
+    },
     chooseFolder: async (title, defaultPath) => {
       const options: Electron.OpenDialogOptions = { title, defaultPath, properties: ["openDirectory", "createDirectory", "dontAddToRecent"] };
       const result = window && !window.isDestroyed() ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
