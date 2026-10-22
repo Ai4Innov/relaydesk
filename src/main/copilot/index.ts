@@ -14,10 +14,10 @@ const WORKSPACE_FILE_TOOLS = ["view", "create", "edit", "glob", "grep"] as const
 
 function workspacePrompt(workspace: ChatWorkspace, profile: PlatformProfile): string {
   return "\n\nLOCAL WORKSPACE TOOLS. Besides app tools you have Copilot's built-in local tools, like the native Copilot CLI: " +
-    `file tools (view, create, edit, glob, grep) confined to the user's workspace folder ${workspace.directory}` +
+    `file tools (view, create, edit, glob, grep) working in the user's workspace folder ${workspace.directory} (edits to other ordinary user files are allowed after the app's write check)` +
     (workspace.shell ? `; ${profile.shell.hint} (${profile.name}) whose working directory is that folder` : "; shell commands are turned off (if a request truly needs one, deliver what you can with the other tools and tell the user to set Shell commands to 'Ask every time' in Settings → AI & assistant → Assistant tools)") +
     (workspace.web ? "; web_fetch for public web pages" : "; web access is turned off (the user can set Web access to 'Ask every time' in Settings → AI & assistant → Assistant tools)") + ". " +
-    "Ordinary commands, public web pages and ordinary file reads run without prompts. A safety check in the app (not you) stops sensitive or destructive actions (deleting, overwriting outside the workspace, installing software, admin rights, system/security settings, credentials or keys, sending data or email to other systems, private-network addresses) and shows the user an approval card with the exact text; the user may deny it. Prefer non-destructive ways to reach the goal (for example write a new file instead of deleting one). " +
+    "Ordinary commands, public web pages, ordinary file reads and ordinary user-file edits or deletions (inside or outside the workspace) run without prompts. A safety check in the app (not you) stops sensitive or destructive actions (deleting or overwriting system/program files, app settings or whole drive/home folders, installing software, admin rights, system/security settings, credentials or keys, sending data or email to other systems, private-network addresses) and shows the user an approval card with the exact text; the user may deny it. Prefer non-destructive ways to reach the goal (for example write a new file instead of deleting one). " +
     "Do not argue about a denial; continue without it or explain what is needed. " +
     "For Word, PDF, Excel, PowerPoint, Markdown, CSV, text or HTML deliverables call create_document (format pdf renders a real paginated PDF; for a PDF version of an earlier document, call it again with the same content and format pdf); it writes real .docx/.pdf/.xlsx/.pptx files into the workspace without a shell, and the app shows Open/Show in folder buttons. " +
     "Never claim you cannot create a document or file: use create_document or the file tools. Report the exact saved path from the tool result. " +
@@ -39,7 +39,7 @@ export function chatSessionConfig(model: string, directory: string, fs: MemorySe
     excludedTools: workspace ? ["mcp:*"] : ["builtin:*", "mcp:*"],
     tools,
     ...(workspace ? {
-      createSessionFsProvider: () => new WorkspaceSessionFs(fs, workspace.directory, path => workspace.readApproved(path), profile),
+      createSessionFsProvider: () => new WorkspaceSessionFs(fs, workspace.directory, path => workspace.readApproved(path), profile, path => workspace.writeApproved?.(path) ?? false),
       onPermissionRequest: async (request: PermissionRequest): Promise<PermissionRequestResult> =>
         await workspace.permission(request as unknown as WorkspacePermissionRequest) === "approve" ? { kind: "approve-once" } as PermissionRequestResult
           : { kind: "reject", feedback: "The user denied this request in Relay Desk." } as PermissionRequestResult

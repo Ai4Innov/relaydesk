@@ -33,6 +33,8 @@ export interface ChatWorkspace {
   /** Resolves when the user (or app policy) has decided; the adapter pauses idle timers meanwhile. */
   permission(request: WorkspacePermissionRequest): Promise<"approve" | "deny">;
   readApproved(path: string): boolean;
+  /** Exact files outside the workspace the user (or the automatic safety check) allowed changing during this turn. */
+  writeApproved?(path: string): boolean;
 }
 export interface ChatAgentRequest {
   prompt: string;

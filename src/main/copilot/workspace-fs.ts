@@ -16,7 +16,7 @@ function denied(path: string, workspace: string): Error {
  */
 export class WorkspaceSessionFs implements SessionFsProvider {
   constructor(private memory: MemorySessionFs, private workspace: string, private readApproved: (path: string) => boolean = () => false,
-    private profile: PlatformProfile = host) {}
+    private profile: PlatformProfile = host, private writeApproved: (path: string) => boolean = () => false) {}
   private get path() { return this.profile.path; }
   private isSession(path: string): boolean {
     return !this.path.isAbsolute(path) || insidePath(this.profile.sessionRoot, path, this.profile);
@@ -39,6 +39,8 @@ export class WorkspaceSessionFs implements SessionFsProvider {
     const root = await this.resolveReal(this.workspace);
     if (insidePath(this.workspace, resolved, this.profile) && insidePath(root, await this.resolveReal(resolved), this.profile)) return resolved;
     if (!write && this.readApproved(resolved)) return resolved;
+    // Exact outside files the safety check or the user approved for this turn (read too, so edits can load them).
+    if (this.writeApproved(resolved) || this.writeApproved(await this.resolveReal(resolved))) return resolved;
     throw denied(resolved, this.workspace);
   }
   async readFile(path: string): Promise<string> {

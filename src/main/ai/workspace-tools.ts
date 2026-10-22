@@ -16,10 +16,10 @@ export const WORKSPACE_TOOL_PROGRESS: Record<string, string> = {
 
 export function appWorkspacePrompt(workspace: ChatWorkspace, profile: PlatformProfile = host): string {
   return "\n\nLOCAL WORKSPACE TOOLS. Besides app tools you have Relay Desk's local tools: " +
-    `list_files, read_file, write_file, edit_file and search_files, confined to the user's workspace folder ${workspace.directory} (relative paths resolve there)` +
+    `list_files, read_file, write_file, edit_file and search_files, working in the user's workspace folder ${workspace.directory} (relative paths resolve there; list/search stay there)` +
     (workspace.shell ? `; run_shell runs one ${profile.shell.name} command (${profile.name}) in that folder` : "; shell commands are turned off (if a request truly needs one, deliver what you can with the other tools and tell the user to set Shell commands to 'Ask every time' in Settings → AI & assistant → Assistant tools)") +
     (workspace.web ? "; web_fetch reads one public http(s) page" : "; web access is turned off (the user can set Web access to 'Ask every time' in Settings → AI & assistant → Assistant tools)") + ". " +
-    "Ordinary commands, public web pages and ordinary file reads run without prompts. A safety check in the app (not you) stops sensitive or destructive actions (deleting, overwriting outside the workspace, installing software, admin rights, system/security settings, credentials or keys, sending data or email to other systems, private-network addresses) and shows the user an approval card with the exact text; the user may deny it. Prefer non-destructive ways to reach the goal (for example write a new file instead of deleting one). " +
+    "Ordinary commands, public web pages, ordinary file reads and ordinary user-file edits or deletions (inside or outside the workspace) run without prompts. A safety check in the app (not you) stops sensitive or destructive actions (deleting or overwriting system/program files, app settings or whole drive/home folders, installing software, admin rights, system/security settings, credentials or keys, sending data or email to other systems, private-network addresses) and shows the user an approval card with the exact text; the user may deny it. Prefer non-destructive ways to reach the goal (for example write a new file instead of deleting one). " +
     "Do not argue about a denial; continue without it or explain what is needed. " +
     "For Word, PDF, Excel, PowerPoint, Markdown, CSV, text or HTML deliverables call create_document (format pdf renders a real paginated PDF; for a PDF version of an earlier document, call it again with the same content and format pdf); it writes real .docx/.pdf/.xlsx/.pptx files into the workspace, and the app shows Open/Show in folder buttons. " +
     "Never claim you cannot create a document or file: use create_document or write_file. Report the exact saved path from the tool result. " +
@@ -67,7 +67,9 @@ export function workspaceTools(workspace: ChatWorkspace, options: WorkspaceToolO
   const resolve = (value: unknown, name = "path") => profile.path.resolve(root, str(value, name, 1000));
   const insideWorkspace = async (path: string) => insidePath(await realLocation(root, profile), await realLocation(path, profile), profile);
   const writable = async (path: string) => {
-    if (!await insideWorkspace(path)) throw new Error(`Files can only be written inside the workspace folder ${root}.`);
+    if (await insideWorkspace(path)) return path;
+    if (await workspace.permission({ kind: "write", path: await realLocation(path, profile) }) !== "approve")
+      throw new Error("The user denied changing this file outside the workspace (or the safety check blocked it).");
     return path;
   };
   const readable = async (path: string) => {
@@ -117,7 +119,7 @@ export function workspaceTools(workspace: ChatWorkspace, options: WorkspaceToolO
       const offset = optionalInt(args.offset, 0, lines.length), limit = optionalInt(args.limit, 400, 2000);
       return { path, totalLines: lines.length, offset, content: clip(lines.slice(offset, offset + limit).join("\n")) };
     }),
-    run("write_file", "Create or overwrite a text file inside the workspace.", object({
+    run("write_file", "Create or overwrite a text file. Relative paths resolve in the workspace; other ordinary user files are allowed, protected locations need the user's approval.", object({
       path: { type: "string" }, content: { type: "string" }, overwrite: { type: "boolean" }
     }, ["path", "content"]), async args => {
       const path = await writable(resolve(args.path));
@@ -128,7 +130,7 @@ export function workspaceTools(workspace: ChatWorkspace, options: WorkspaceToolO
       await writeFile(path, args.content, "utf8");
       return { saved: true, path, bytes: Buffer.byteLength(args.content) };
     }),
-    run("edit_file", "Replace one exact, unique text occurrence in a workspace file.", object({
+    run("edit_file", "Replace one exact, unique text occurrence in a text file (workspace or other ordinary user file).", object({
       path: { type: "string" }, old_text: { type: "string" }, new_text: { type: "string" }
     }, ["path", "old_text", "new_text"]), async args => {
       const path = await writable(resolve(args.path));

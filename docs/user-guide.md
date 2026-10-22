@@ -42,16 +42,16 @@ Created files appear as cards with **Open** and **Show in folder**; **Open** is 
 for passive document/image formats, so a script-like file (for example `.hta` or `.bat`)
 can only be shown in its folder, never launched from the app.
 
-By default the assistant works **automatically**: shell commands, web requests and reads outside
+By default the assistant works **automatically**: shell commands, web requests, reads outside the workspace and editing, replacing or deleting your ordinary files (anywhere outside system folders) run without asking. In detail: commands, web requests and reads outside
 the workspace run without asking, and each one is listed under **N actions ran automatically** in the reply.
 A built-in safety check (deterministic code, not the AI) stops anything sensitive or destructive and
 shows a **Sensitive: needs your approval** card first (**Allow once** or **Deny**), for example:
 
-- deleting or overwriting files, formatting disks, `git reset --hard`/force push, killing processes, shutdown;
+- deleting, replacing or changing **system or program folders** (`C:\Windows`, `Program Files`, `ProgramData`, `/usr`, `/etc`...), **app settings** (`AppData`, dotfolders like `~/.config`, `~/Library`) or an **entire** drive, home folder, workspace or main folder such as Documents/Desktop/Downloads (files and subfolders inside them are fine);`r`n- emptying the Recycle Bin, registry/environment/certificate stores, `git push --force`, formatting disks, killing processes, shutdown;
 - admin/sudo, registry, services, scheduled tasks, firewall/security settings, user accounts, permissions;
 - installing software or running downloaded/encoded code;
 - touching credentials, keys, browser data or Relay Desk's private data folder;
-- sending email or uploading data (POST requests, ssh/scp, git push), writing outside the workspace;
+- sending email or uploading data (POST requests, ssh/scp, git push);
 - URLs pointing at your local network or containing credentials/tokens, and reading sensitive files (`.ssh`, `.env`, key stores).
 
 Sensitive actions always need their own approval, even after **Allow for this response**. Choose

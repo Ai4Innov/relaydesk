@@ -73,4 +73,15 @@ describe("workspace session filesystem", () => {
     expect(await fs.readFile(file)).toBe("ok");
     await expect(fs.writeFile(file, "changed")).rejects.toMatchObject({ code: "EACCES" });
   });
+  it("edits and deletes only the exact outside files the write check approved", async () => {
+    const workspace = await temp(), outside = await temp();
+    const file = join(outside, "plan.md"), other = join(outside, "other.md");
+    await writeFile(file, "old"); await writeFile(other, "keep");
+    const fs = new WorkspaceSessionFs(new MemorySessionFs(), workspace, () => false, host, path => path === file);
+    await fs.writeFile(file, "new");
+    expect(await readFile(file, "utf8")).toBe("new");
+    await expect(fs.writeFile(other, "x")).rejects.toMatchObject({ code: "EACCES" });
+    await fs.rm(file, false, false);
+    expect(await fs.exists(file)).toBe(false);
+  });
 });

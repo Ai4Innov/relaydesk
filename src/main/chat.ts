@@ -7,7 +7,7 @@ import type { Account, Approval, Attachment, CalendarEvent, Citation, Collection
 import { CHAT_MESSAGE_MAX, CHAT_PROMPT_MAX, ChatLimitError, chatFileOpenable, ChatTimeoutError, skipsChatMailRefresh, type ChatAction, type ChatCommand, type ChatConversation, type ChatPermission, type ChatState, type ChatTurn } from "../shared/chat";
 import { ToolOutputBudget, toolErrorResult } from "./chat-tool-budget";
 import { createDocument, DOCUMENT_FORMATS } from "./documents";
-import { readRisk, shellRisk, urlRisk } from "./safety";
+import { pathRisk, readRisk, shellRisk, urlRisk } from "./safety";
 import { insidePath } from "./copilot/workspace-fs";
 import type { TaskItem } from "../shared/productivity";
 import type { BrowserCalendarItem } from "../shared/browser";
@@ -459,7 +459,7 @@ export class ChatService {
     try {
       this.guard(turn);
       let toolActivity: (() => void) | undefined;
-      const approvedReads = new Set<string>();
+      const approvedReads = new Set<string>(), approvedWrites = new Set<string>();
       if (directory) before = await scanWorkspace(directory).catch(() => undefined);
       controller.signal.throwIfAborted();
       this.guard(turn);
@@ -469,7 +469,8 @@ export class ChatService {
         workspace: directory ? {
           directory, shell: settings.assistantShell !== "off", web: settings.assistantWeb !== "off",
           readApproved: path => [...approvedReads].some(root => insidePath(root, path)),
-          permission: request => this.permissionRequest(turn, conversationId, request, directory, approvedReads)
+          writeApproved: path => [...approvedWrites].some(item => insidePath(item, path) && insidePath(path, item)),
+          permission: request => this.permissionRequest(turn, conversationId, request, directory, approvedReads, approvedWrites)
         } : undefined });
       this.guard(turn);
       // Citations are only ever shown from evidence the tools actually read; ignore any other IDs the model lists.
@@ -991,7 +992,7 @@ export class ChatService {
     else if (files.length < 50) files.push({ name: host.path.basename(path), path, size, createdAt: now() });
     this.persist();
   }
-  private async permissionRequest(turn: StoredTurn, conversationId: string, request: PermissionRequest, directory: string, approvedReads: Set<string>): Promise<"approve" | "deny"> {
+  private async permissionRequest(turn: StoredTurn, conversationId: string, request: PermissionRequest, directory: string, approvedReads: Set<string>, approvedWrites = new Set<string>()): Promise<"approve" | "deny"> {
     const raw = request as unknown as Record<string, unknown>;
     const text = (value: unknown, max = 4000) => typeof value === "string" ? value.slice(0, max) : "";
     const settings = this.hooks.settings();
@@ -1000,8 +1001,11 @@ export class ChatService {
     let kind: ChatPermission["kind"], title: string, detail: string, risk: string | undefined;
     const automatic = (mode: string) => mode === "auto";
     if (request.kind === "write") {
-      const path = text(raw.resolvedPath) || text(raw.fileName);
-      return path && insidePath(directory, path) ? "approve" : "deny";
+      const named = text(raw.resolvedPath) || text(raw.path) || text(raw.fileName);
+      const path = named ? host.path.resolve(directory, named) : "";
+      if (path && insidePath(directory, path)) return "approve";
+      kind = "write"; title = "Change a file outside the workspace"; detail = path; risk = path ? pathRisk(path, directory) : undefined;
+      if (path && !risk && automatic(settings.assistantShell)) { approvedWrites.add(path); return this.autoApproved(turn, kind, title, detail); }
     } else if (request.kind === "read") {
       const path = text(raw.resolvedPath) || text(raw.path);
       if (path && (insidePath(directory, path) || [...approvedReads].some(root => insidePath(root, path)))) return "approve";
@@ -1036,6 +1040,7 @@ export class ChatService {
         clearTimeout(timeout); signal.removeEventListener("abort", abort);
         permission.status = status;
         if (status === "approved" && kind === "read") approvedReads.add(detail);
+        if ((status === "approved" || status === "approved-chat") && kind === "write") approvedWrites.add(detail);
         resolve(status === "approved" || status === "approved-chat" ? "approve" : "deny");
       };
       signal.addEventListener("abort", abort, { once: true });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
-import { readRisk, shellRisk, urlRisk } from "../src/main/safety";
+import { homedir, tmpdir } from "node:os";
+import { pathRisk, readRisk, shellRisk, urlRisk } from "../src/main/safety";
 import { host } from "../src/main/platform";
 
 const workspace = join(tmpdir(), "Relay Desk workspace");
@@ -16,8 +16,8 @@ describe("assistant safety check", () => {
   });
 
   it.each([
-    ["Remove-Item -Recurse old", "deletes"], ["rm -rf build", "deletes"], ["del /s *.tmp", "deletes"], ["find . -name '*.log' -delete", "deletes"],
-    ["git reset --hard HEAD~3", "Git"], ["git push origin main --force", "Git"], ["git push", "publishes"],
+    ["git push origin main --force", "force-overwrites"], ["git push", "publishes"], ["Clear-RecycleBin -Force", "permanently"],
+    ["Remove-Item -Recurse HKCU:\\Software\\Vendor", "registry"],
     ["format D:", "formats"], ["diskpart", "disks"], ["Stop-Process -Name chrome", "terminates"], ["shutdown /s /t 0", "shuts down"],
     ["sudo apt install curl", "administrator"], ["Start-Process pwsh -Verb RunAs", "administrator"], ["Set-ExecutionPolicy Unrestricted", "security"],
     ["reg add HKCU\\Software\\X /v Y /d 1", "registry"], ["schtasks /create /tn x /tr calc", "scheduled"], ["crontab -e", "scheduled"],
@@ -32,12 +32,39 @@ describe("assistant safety check", () => {
     expect(shellRisk(command, workspace)).toMatch(new RegExp(reason, "i"));
   });
 
-  it("allows writes in the workspace (even with spaces in its path) but asks for writes elsewhere", () => {
-    const inside = join(workspace, "out.txt"), outside = host.id === "win32" ? "C:\\Windows\\Temp\\x.txt" : "/etc/x.conf";
-    expect(shellRisk(`Set-Content -Path "${inside}" -Value hi`, workspace)).toBeUndefined();
-    expect(shellRisk(`Set-Content -Path "${outside}" -Value hi`, workspace)).toMatch(/outside the workspace/);
+  it("deletes and replaces ordinary user files automatically, inside or outside the workspace", () => {
+    const inside = join(workspace, "out.txt");
+    const commands = ["Remove-Item -Recurse old", "rm -rf build", "del /s *.tmp", "find . -name '*.log' -delete", "git reset --hard HEAD~3", "git clean -fdx",
+      `Set-Content -Path "${inside}" -Value hi`, "Remove-Item ~/Downloads/report-old.pdf", "Remove-Item -Recurse -Force ~/Documents/Finco/drafts",
+      ...(host.id === "win32"
+        ? ["Remove-Item -Recurse -Force \"D:\\Archive\\Old Project\"", "Move-Item notes.txt D:\\Backup\\notes.txt", "Copy-Item report.docx $env:USERPROFILE\\Desktop\\report.docx -Force",
+          "Remove-Item \"$env:TEMP\\scratch.txt\"", "Set-Content -Path C:\\Data\\finco\\plan.md -Value x"]
+        : ["rm -rf /tmp/scratch", "mv notes.txt /mnt/backup/notes.txt", "cp report.docx ~/Desktop/report.docx"])];
+    for (const command of commands) expect(shellRisk(command, workspace), command).toBeUndefined();
   });
 
+  it("asks before deleting or replacing system, program, settings or whole top-level folders", () => {
+    const commands: [string, RegExp][] = [
+      ["Remove-Item -Recurse -Force ~", /home/], ["rm -rf ~/*", /home/], ["Remove-Item -Recurse ~/Documents", /entire Documents/],
+      ["rm -rf ~/.config/app", /configuration/], [`Remove-Item -Recurse "${workspace}"`, /workspace/], ["Remove-Item -Recurse ..\\..\\..\\..\\*", /./],
+      ...(host.id === "win32" ? [
+        ["Remove-Item -Recurse C:\\Windows\\System32", /system/], ["del \"C:\\Program Files\\App\\app.exe\"", /system or program/],
+        ["Remove-Item C:\\* -Recurse", /entire drive/], ["Remove-Item -Recurse $env:LOCALAPPDATA\\Google", /app settings/],
+        ["Set-Content $env:windir\\System32\\drivers\\etc\\hosts x", /system/], ["Remove-Item C:\\Users\\someone -Recurse", /home/],
+        ["Copy-Item x.dll C:\\ProgramData\\Vendor\\x.dll", /system or program/]
+      ] as [string, RegExp][] : [
+        ["rm -rf /usr/lib/x", /system/], ["sudo rm -rf /", /administrator/], ["rm -rf /home/someone", /home/], ["echo x > /etc/hosts", /system/]
+      ] as [string, RegExp][])
+    ];
+    for (const [command, reason] of commands) expect(shellRisk(command, workspace), command).toMatch(reason);
+  });
+
+  it("classifies target paths for file tools", () => {
+    expect(pathRisk(join(homedir(), "Documents", "Finco", "plan.md"), workspace)).toBeUndefined();
+    expect(pathRisk(join(homedir(), ".ssh", "config"), workspace)).toMatch(/keys/);
+    expect(pathRisk(homedir(), workspace)).toMatch(/home/);
+    expect(pathRisk(host.id === "win32" ? "C:\\Windows\\win.ini" : "/etc/hosts", workspace)).toMatch(/system/);
+  });
   it("fetches public pages automatically and stops private-network or data-carrying URLs", () => {
     expect(urlRisk("https://example.org/docs?page=2")).toBeUndefined();
     for (const url of ["http://localhost:3000", "http://127.0.0.1:9339/json", "http://192.168.1.10/admin", "http://169.254.169.254/latest/meta-data",

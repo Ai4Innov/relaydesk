@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PermissionRequest } from "@github/copilot-sdk";
 import { ChatService } from "../src/main/chat";
+import { host } from "../src/main/platform";
 import type { ChatAgentRequest } from "../src/main/copilot";
 import type { Collection, Snapshot } from "../src/shared/contracts";
 import { chatFileOpenable } from "../src/shared/chat";
@@ -109,18 +110,22 @@ describe("chat workspace security", () => {
 it("runs ordinary actions automatically but stops sensitive ones for an individual decision", async () => {
     const f = fixture("auto");
     const safe = { kind: "shell", fullCommandText: "Get-ChildItem | Select-Object Name" } as unknown as PermissionRequest;
-    const destructive = { kind: "shell", fullCommandText: "Remove-Item -Recurse C:\\Users\\me\\Projects" } as unknown as PermissionRequest;
+    const destructive = { kind: "shell", fullCommandText: host.id === "win32" ? "Remove-Item -Recurse C:\\Windows\\System32" : "rm -rf /usr/lib" } as unknown as PermissionRequest;
     const page = { kind: "url", url: "https://example.org/docs" } as unknown as PermissionRequest;
     const internal = { kind: "url", url: "http://127.0.0.1:9339/json" } as unknown as PermissionRequest;
     f.hooks.generate.mockImplementationOnce(async request => {
       expect(await request.workspace!.permission(safe)).toBe("approve");
       expect(await request.workspace!.permission(page)).toBe("approve");
+      const ordinaryFile = join(tmpdir(), "relay-outside", "notes.md");
+      expect(await request.workspace!.permission({ kind: "write", fileName: ordinaryFile } as unknown as PermissionRequest)).toBe("approve");
+      expect(request.workspace!.writeApproved?.(ordinaryFile)).toBe(true);
+      expect(request.workspace!.writeApproved?.(join(tmpdir(), "relay-outside", "other.md"))).toBe(false);
       const pending = request.workspace!.permission(destructive);
       await vi.waitFor(() => expect(f.chat.snapshot().conversations[0].turns.at(-1)!.permissions?.some(item => item.status === "pending")).toBe(true));
       const conversation = f.chat.snapshot().conversations[0];
       const turn = conversation.turns.at(-1)!;
       const card = turn.permissions!.find(item => item.status === "pending")!;
-      expect(card.risk).toContain("deletes");
+      expect(card.risk).toMatch(/deletes or replaces files where it is a system/);
       expect(card.title).toMatch(/^Sensitive:/);
       // "Allow for this response" never becomes a blanket grant for sensitive actions.
       await f.chat.command({ type: "chat.permission", conversationId: conversation.id, turnId: turn.id, requestId: card.id, decision: "chat" });
@@ -136,7 +141,7 @@ it("runs ordinary actions automatically but stops sensitive ones for an individu
     });
     await f.send("Tidy my project");
     const permissions = f.last().permissions!;
-    expect(permissions.filter(item => item.status === "auto").map(item => item.detail)).toEqual(["Get-ChildItem | Select-Object Name", "https://example.org/docs"]);
+    expect(permissions.filter(item => item.status === "auto").map(item => item.detail)).toEqual(["Get-ChildItem | Select-Object Name", "https://example.org/docs", join(tmpdir(), "relay-outside", "notes.md")]);
     expect(permissions.find(item => item.risk)?.status).toBe("approved");
     expect(f.chat.snapshot().conversations[0].grants ?? []).toEqual([]);
   });

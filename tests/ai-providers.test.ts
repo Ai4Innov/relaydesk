@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -119,13 +119,19 @@ describe("ClaudeAdapter", () => {
 
 describe("workspace tools", () => {
   const tools = (workspace: ChatWorkspace) => new Map(workspaceTools(workspace).map(tool => [tool.name, tool]));
-  it("writes inside the workspace and refuses writes outside it", async () => {
+  it("writes inside the workspace and asks the app's write check for outside files", async () => {
     const directory = await tempDir();
-    const map = tools({ directory, shell: false, web: false, permission: async () => "deny", readApproved: () => false });
+    const permission = vi.fn(async () => "deny" as const);
+    const map = tools({ directory, shell: false, web: false, permission, readApproved: () => false });
     expect(await map.get("write_file")!.handler({ path: "notes/report.md", content: "# Report" })).not.toHaveProperty("error");
     expect(await readFile(join(directory, "notes", "report.md"), "utf8")).toBe("# Report");
     const outside = await map.get("write_file")!.handler({ path: join(await tempDir(), "x.txt"), content: "x" }) as { error?: string };
-    expect(outside.error).toMatch(/inside the workspace/);
+    expect(outside.error).toMatch(/denied/);
+    expect(permission).toHaveBeenCalledWith(expect.objectContaining({ kind: "write" }));
+    const other = await tempDir();
+    const allowed = tools({ directory, shell: false, web: false, permission: async () => "approve", readApproved: () => false });
+    expect(await allowed.get("write_file")!.handler({ path: join(other, "y.txt"), content: "y" })).not.toHaveProperty("error");
+    expect(await readFile(join(other, "y.txt"), "utf8")).toBe("y");
   });
   it("asks before reading outside files and honours a denial", async () => {
     const directory = await tempDir(), other = await tempDir();
@@ -139,9 +145,12 @@ describe("workspace tools", () => {
   it("treats a symlink escaping the workspace as outside", async () => {
     const directory = await tempDir(), other = await tempDir();
     try { await symlink(other, join(directory, "link"), "junction"); } catch { return; }
-    const map = tools({ directory, shell: false, web: false, permission: async () => "deny", readApproved: () => false });
+    const permission = vi.fn(async () => "deny" as const);
+    const map = tools({ directory, shell: false, web: false, permission, readApproved: () => false });
     const result = await map.get("write_file")!.handler({ path: "link/escape.txt", content: "x" }) as { error?: string };
-    expect(result.error).toMatch(/inside the workspace/);
+    expect(result.error).toMatch(/denied/);
+    // The write check sees the real target behind the link, not the workspace-looking path.
+    expect(permission).toHaveBeenCalledWith({ kind: "write", path: join(await realpath(other), "escape.txt") });
   });
   it("only offers shell and web tools when enabled, gated by approval", async () => {
     const directory = await tempDir();

@@ -1,4 +1,5 @@
 import { isIP } from "node:net";
+import { homedir } from "node:os";
 import { host, insidePath } from "./platform";
 
 /**
@@ -10,14 +11,14 @@ interface Rule { pattern: RegExp; reason: string }
 
 const SHELL_RULES: Rule[] = [
   // Deleting, wiping or force-overwriting data
-  { pattern: /(^|[\s;&|(`{])(rm|rmdir|del|erase|rd|unlink|shred|srm|wipe)(\s|$)/i, reason: "deletes files or folders" },
-  { pattern: /\b(Remove-Item|Clear-Content|Clear-RecycleBin|Remove-ItemProperty|Clear-Item)\b/i, reason: "deletes files, folders or settings" },
-  { pattern: /\bfind\b[^\n|;]*\s-delete\b/i, reason: "deletes files" },
+  // Ordinary file deletes/overwrites are checked by target (see pathRisk); these always ask.
+  { pattern: /\bClear-RecycleBin\b|\brm\b[^\n]*\s--no-preserve-root\b/i, reason: "permanently deletes files that cannot be recovered" },
+  { pattern: /\b(Remove-ItemProperty|Clear-ItemProperty)\b|\b(Remove-Item|Clear-Item|Set-Item|New-Item|Rename-Item|Move-Item|Copy-Item|ri|rm|del)\b[^\n]*(?<![$\w{])(HKLM|HKCU|HKCR|HKU|HKCC|Registry|Env|Cert|WSMan):/i, reason: "deletes or changes registry, environment or certificate settings" },
   { pattern: /\b(Format-Volume|Clear-Disk|Initialize-Disk|diskpart|mkfs(\.\w+)?|wipefs|fdisk|parted|vssadmin|wbadmin|fsutil|bcdedit)\b/i, reason: "modifies disks, volumes, backups or boot settings" },
   { pattern: /(^|[\s;&|])format\s+[a-z]:/i, reason: "formats a drive" },
   { pattern: /\bcipher\s+\/w\b/i, reason: "wipes disk space" },
   { pattern: /\bdd\b[^\n]*\bof=/i, reason: "writes raw data to a device or file" },
-  { pattern: /\bgit\s+(clean\s+-\w*f|reset\s+--hard|push\b[^\n]*(--force|-f\b)|checkout\s+--\s|branch\s+-D|stash\s+(drop|clear))/i, reason: "discards or force-overwrites Git work" },
+  { pattern: /\bgit\s+push\b[^\n]*(--force|-f\b|--mirror|--delete|\s:\S)/i, reason: "force-overwrites or deletes work in a remote Git repository" },
   { pattern: /\b(Stop-Process|kill|pkill|killall|taskkill)\b/i, reason: "terminates running programs" },
   { pattern: /\b(shutdown|reboot|halt|poweroff|Restart-Computer|Stop-Computer|Suspend-Computer)\b/i, reason: "shuts down or restarts the computer" },
   // Privilege, system configuration, persistence
@@ -45,29 +46,86 @@ const SHELL_RULES: Rule[] = [
 
 const SENSITIVE_PATH = /[\\/]\.ssh([\\/]|$)|[\\/]\.(aws|azure|kube|gnupg|docker|config[\\/]gh)([\\/]|$)|\.(netrc|npmrc|pypirc|git-credentials|env)$|id_(rsa|ed25519|ecdsa|dsa)|[\\/](Login Data|Cookies|Local State|Web Data|key[34]\.db|logins\.json|cookies\.sqlite)$|Keychains?[\\/]|[\\/]Microsoft[\\/](Credentials|Protect|Vault)([\\/]|$)|AppData[\\/](Roaming|Local)[\\/]Relay Desk([\\/]|$)|Application Support[\\/]Relay Desk([\\/]|$)|\.config[\\/]Relay Desk([\\/]|$)|[\\/](etc[\\/](shadow|sudoers)|SAM|SYSTEM|SECURITY)$|\.(pem|key|pfx|p12|kdbx)$/i;
 
-const WRITE_COMMAND = /\b(Set-Content|Add-Content|Out-File|New-Item|Copy-Item|Move-Item|Rename-Item|cp|copy|xcopy|robocopy|mv|move|ren|rename|tee|touch|mkdir|md)\b|>{1,2}/i;
-const ABSOLUTE_PATH = host.id === "win32"
-  ? /(?:[A-Za-z]:[\\/][^\s"'`|;&<>]*|\\\\[^\s"'`|;&<>]+|\$(?:env:)?(?:HOME|USERPROFILE|APPDATA|LOCALAPPDATA)[^\s"'`|;&<>]*|%(?:USERPROFILE|APPDATA|LOCALAPPDATA)%[^\s"'`|;&<>]*)/gi
-  : /(?:(?:^|[\s"'=])(?:\/|~[\\/])[^\s"'`|;&<>]*|\$(?:env:)?(?:HOME|USERPROFILE|APPDATA|LOCALAPPDATA)[^\s"'`|;&<>]*|%(?:USERPROFILE|APPDATA|LOCALAPPDATA)%[^\s"'`|;&<>]*)/g;
+const DELETE_COMMAND = /(^|[\s;&|(`{])(rm|rmdir|del|erase|rd|ri|unlink|shred|srm|wipe)(\s|$)|\b(Remove-Item|Clear-Content|Clear-Item)\b|\bfind\b[^\n|;]*\s-delete\b|\bgit\s+(clean|reset|checkout|restore|rm)\b/i;
+const WRITE_COMMAND = /\b(Set-Content|Add-Content|Out-File|New-Item|Copy-Item|Move-Item|Rename-Item|Expand-Archive|cp|copy|xcopy|robocopy|mv|move|ren|rename|tee|touch|mkdir|md|sed\s+-i|truncate)\b|>{1,2}/i;
+const ENV_NAMES = "HOME|USERPROFILE|APPDATA|LOCALAPPDATA|PROGRAMDATA|ProgramFiles(?:\\(x86\\))?|ProgramW6432|SystemRoot|windir|SystemDrive|HOMEDRIVE|TEMP|TMP|PUBLIC|ALLUSERSPROFILE|OneDrive";
+const PATH_CHARS = "[^\\s\"'`|;&<>]*";
+const ABSOLUTE_PATH = new RegExp(
+  (host.id === "win32" ? `(?:(?:^|(?<=[\\s"'=(]))[A-Za-z]:[\\\\/]?${PATH_CHARS}|\\\\\\\\[^\\s"'\`|;&<>]+|` : `(?:(?:^|(?<=[\\s"'=(]))\\/${PATH_CHARS}|`) +
+  `(?:^|(?<=[\\s"'=(]))~(?:[\\\\/]${PATH_CHARS})?(?=$|[\\s"'\`|;&<>)])|\\$\\{?(?:env:)?(?:${ENV_NAMES})\\}?${PATH_CHARS}|%(?:${ENV_NAMES})%${PATH_CHARS}|` +
+  `(?:^|(?<=[\\s"'=(]))\\.\\.(?:[\\\\/]${PATH_CHARS})?)`, "gi");
+
+/** Expands ~ and well-known environment variables so a target path can be classified. */
+function expandPath(raw: string): string {
+  const home = homedir();
+  const lookup = (name: string) => {
+    if (/^(HOME|USERPROFILE)$/i.test(name)) return home;
+    const key = Object.keys(process.env).find(item => item.toLowerCase() === name.toLowerCase());
+    return key ? process.env[key] : undefined;
+  };
+  return raw
+    .replace(/^~(?=$|[\\/])/, home)
+    .replace(/^\$\{?(?:env:)?([A-Za-z_][\w()]*)\}?/i, (match, name: string) => lookup(name) ?? match)
+    .replace(/^%([^%]+)%/, (match, name: string) => lookup(name) ?? match);
+}
+
+/** Paths mentioned by a shell command: absolute, home/env-relative and ../ escapes from the workspace. */
+function commandPaths(command: string): string[] {
+  const quoted = [...command.matchAll(/"([^"]+)"|'([^']+)'/g)].map(match => (match[1] ?? match[2]).trim())
+    .filter(value => [...value.matchAll(ABSOLUTE_PATH)].some(match => match.index === 0));
+  const bare = [...command.replace(/"[^"]*"|'[^']*'/g, " ").matchAll(ABSOLUTE_PATH)].map(match => match[0]);
+  return [...quoted, ...bare].map(path => path.trim().replace(/^["'=(]/, "").replace(/[)]+$/, ""))
+    .filter(path => path && !/^\/dev\/null$/.test(path) && !/^\$null$/i.test(path));
+}
+
+const WIN_SYSTEM = /^[a-z]:\\(windows|program files( \(x86\))?|programdata|\$recycle\.bin|system volume information|recovery|boot|efi|perflogs|msocache|config\.msi|intel|amd|nvidia|drivers)(\\|$)|^[a-z]:\\(pagefile|hiberfil|swapfile)\.sys$|^[a-z]:\\(bootmgr|bootnxt)$|^[a-z]:\\users(\\(public|default|default user|all users)(\\|$)|$)/i;
+const UNIX_SYSTEM = /^\/(bin|boot|dev|etc|lib|lib32|lib64|libx32|opt|proc|root|run|sbin|srv|sys|usr|System|Library|Applications|cores|snap)(\/|$)|^\/var(?!\/(tmp|folders)(\/|$))(\/|$)|^\/private(?!\/(tmp|var\/folders)(\/|$))(\/|$)/;
+const MAIN_USER_FOLDERS = /^(Documents|Desktop|Downloads|Pictures|Music|Videos|Movies|Public|OneDrive[^\\/]*|Dropbox|Google Drive|iCloud Drive)$/i;
+
+/**
+ * Returns why changing or deleting `path` needs validation, or undefined for ordinary user files
+ * (anything that is not system/program data, app settings, credentials, or an entire drive/home/main folder).
+ */
+export function pathRisk(raw: string, workspace: string): string | undefined {
+  if (!raw.trim()) return "the path is empty";
+  const expanded = expandPath(raw.trim());
+  if (/^\$|%[^%]+%/.test(expanded)) return `its target (${raw.slice(0, 80)}) could not be verified`;
+  const resolved = host.path.resolve(workspace, expanded);
+  // A trailing wildcard (C:\*, ~/*) affects everything in the parent folder.
+  const target = resolved.replace(/[\\/]\*+(\.\*)?$/, "").replace(/[\\/]+$/, "") || host.path.parse(resolved).root;
+  const win = host.id === "win32";
+  const same = (a: string, b: string) => win ? a.toLowerCase() === b.toLowerCase() : a === b;
+  const home = homedir().replace(/[\\/]+$/, "");
+  if (SENSITIVE_PATH.test(target) || SENSITIVE_PATH.test(resolved)) return "it holds keys, passwords, browser data or Relay Desk's private data";
+  if (win ? WIN_SYSTEM.test(target) : UNIX_SYSTEM.test(target)) return "it is a system or program folder the computer needs";
+  const parsed = host.path.parse(target);
+  if (same(target, parsed.root.replace(/[\\/]+$/, "")) || same(`${target}${host.path.sep}`, parsed.root) || !target) return "it is an entire drive";
+  if (same(target, home) || same(target, workspace.replace(/[\\/]+$/, ""))) return "it is your whole home or workspace folder";
+  if (/^\/(home|Users)(\/[^/]+)?$/.test(target) || (win && /^[a-z]:\\users\\[^\\]+$/i.test(target))) return "it is a whole user home folder";
+  if (insidePath(home, target) && !same(target, home)) {
+    const rest = target.slice(home.length + 1).split(/[\\/]/);
+    if (rest.length === 1 && MAIN_USER_FOLDERS.test(rest[0])) return `it is your entire ${rest[0]} folder`;
+    if (rest[0].startsWith(".")) return "it holds app or shell configuration";
+    if (/^AppData$/i.test(rest[0]) && !(/^Local$/i.test(rest[1] ?? "") && /^Temp$/i.test(rest[2] ?? ""))) return "it holds app settings or installed programs";
+    if (rest[0] === "Library" && !win) return "it holds app settings";
+  }
+  return undefined;
+}
 
 /** Returns why a shell command needs the user's validation, or undefined if it can run automatically. */
 export function shellRisk(command: string, workspace: string): string | undefined {
   const text = command.trim();
   if (!text) return "the command is empty";
   for (const rule of SHELL_RULES) if (rule.pattern.test(text)) return rule.reason;
-  if (WRITE_COMMAND.test(text)) {
-    // Quoted paths may contain spaces; unquoted ones end at whitespace.
-    const quoted = [...text.matchAll(/"([^"]+)"|'([^']+)'/g)].map(match => match[1] ?? match[2]);
-    const candidates = [...quoted.flatMap(value => [...value.matchAll(ABSOLUTE_PATH)].length ? [value] : []),
-      ...[...text.replace(/"[^"]*"|'[^']*'/g, " ").matchAll(ABSOLUTE_PATH)].map(match => match[0])];
-    const outside = candidates.map(path => path.trim().replace(/^["'=]/, ""))
-      .filter(path => path && !/^\/(dev\/null|tmp\b)/.test(path) && !/^\$null$/i.test(path))
-      .find(path => /^[A-Za-z]:[\\/]/.test(path) || path.startsWith("/") ? !insidePath(workspace, path) : true);
-    if (outside) return `writes outside the workspace folder (${outside.slice(0, 120)})`;
+  const deletes = DELETE_COMMAND.test(text);
+  if (deletes || WRITE_COMMAND.test(text)) {
+    for (const path of commandPaths(text)) {
+      const why = pathRisk(path, workspace);
+      if (why) return `${deletes ? "deletes or replaces" : "changes"} files where ${why} (${path.slice(0, 120)})`;
+    }
   }
   return undefined;
 }
-
 const PRIVATE_HOST = /^(localhost|.*\.local|.*\.internal|.*\.lan|.*\.home|metadata\.google\.internal)$/i;
 function privateAddress(hostname: string): boolean {
   const name = hostname.replace(/^\[|\]$/g, "");
