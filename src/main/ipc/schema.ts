@@ -45,8 +45,8 @@ const settingsPatch = z.object({
   microsoftTenant: z.string().regex(/^[a-zA-Z0-9.-]+$/).max(200).optional(),
   assistantTools: z.boolean().optional(),
   assistantWorkspaceDir: z.string().max(500).refine(value => value === "" || absoluteFolder(value), `Use an absolute ${host.name} folder path.`).optional(),
-  assistantShell: z.enum(["ask", "off"]).optional(),
-  assistantWeb: z.enum(["ask", "off"]).optional(),
+  assistantShell: z.enum(["auto", "ask", "off"]).optional(),
+  assistantWeb: z.enum(["auto", "ask", "off"]).optional(),
   fullAccessByDefault: z.boolean().optional(),
   autoApprove: z.boolean().optional()
 }).strict();

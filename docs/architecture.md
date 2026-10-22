@@ -47,7 +47,7 @@ Microsoft draft updates use conditional writes. Gmail checks the remote draft re
 - `copilot/index.ts`: GitHub Copilot through the official SDK (below).
 - `ai/claude.ts`: Anthropic Messages API with the user's encrypted API key, an explicit base URL and a bounded manual tool loop over app tools plus `workspace-tools.ts`.
 - `ai/codex.ts`: locates the user's Codex CLI (native binary, npm shim or symlink), checks `codex login status`, lists models with `codex debug models`, and runs one isolated `codex exec --json` per request with a strict output schema. App and workspace tools are served by `ai/mcp-bridge.ts`, a minimal MCP streamable-HTTP server on 127.0.0.1 with a per-request bearer token, Host checks and Origin rejection.
-- `ai/workspace-tools.ts`: file, search, document, shell and web tools for Claude and Codex. Writes stay inside the workspace (realpath checks against symlink escapes); outside reads, shell commands and URLs go through the same approval cards as Copilot's built-in tools.
+- `ai/workspace-tools.ts`: file, search, document, shell and web tools for Claude and Codex. Writes stay inside the workspace (realpath checks against symlink escapes); outside reads, shell commands and URLs go through the same permission path as Copilot's built-in tools: automatic by default, with `src/main/safety.ts` (a deterministic classifier) forcing an approval card for sensitive or destructive actions.
 
 ## Copilot isolation and evidence
 

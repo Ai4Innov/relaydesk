@@ -7,6 +7,7 @@ import type { Account, Approval, Attachment, CalendarEvent, Citation, Collection
 import { CHAT_MESSAGE_MAX, CHAT_PROMPT_MAX, ChatLimitError, chatFileOpenable, ChatTimeoutError, skipsChatMailRefresh, type ChatAction, type ChatCommand, type ChatConversation, type ChatPermission, type ChatState, type ChatTurn } from "../shared/chat";
 import { ToolOutputBudget, toolErrorResult } from "./chat-tool-budget";
 import { createDocument, DOCUMENT_FORMATS } from "./documents";
+import { readRisk, shellRisk, urlRisk } from "./safety";
 import { insidePath } from "./copilot/workspace-fs";
 import type { TaskItem } from "../shared/productivity";
 import type { BrowserCalendarItem } from "../shared/browser";
@@ -150,7 +151,7 @@ export class ChatService {
   private confirming = false;
   private confirmation?: Promise<CommandResult>;
   private stopped = false;
-  private pendingPermissions = new Map<string, { turnId: string; conversationId: string; kind: ChatPermission["kind"]; finish(status: ChatPermission["status"]): void }>();
+  private pendingPermissions = new Map<string, { turnId: string; conversationId: string; kind: ChatPermission["kind"]; risk?: string; finish(status: ChatPermission["status"]): void }>();
 
   constructor(private vault: Vault, private hooks: Hooks) {
     this.state = vault.get<StoredState>("checkpoints", KEY) ?? { conversations: [] };
@@ -466,7 +467,7 @@ export class ChatService {
         onToolActivity: listener => { toolActivity = listener; return () => { toolActivity = undefined; }; },
         progress: text => { if (turn.status === "working") { turn.progress = text; this.persist(); } },
         workspace: directory ? {
-          directory, shell: settings.assistantShell === "ask", web: settings.assistantWeb === "ask",
+          directory, shell: settings.assistantShell !== "off", web: settings.assistantWeb !== "off",
           readApproved: path => [...approvedReads].some(root => insidePath(root, path)),
           permission: request => this.permissionRequest(turn, conversationId, request, directory, approvedReads)
         } : undefined });
@@ -996,27 +997,31 @@ export class ChatService {
     const settings = this.hooks.settings();
     const conversation = this.state.conversations.find(item => item.id === conversationId);
     if (!this.active || this.active.turn !== turn || this.active.controller.signal.aborted || !settings.assistantTools) return "deny";
-    let kind: ChatPermission["kind"], title: string, detail: string;
+    let kind: ChatPermission["kind"], title: string, detail: string, risk: string | undefined;
+    const automatic = (mode: string) => mode === "auto";
     if (request.kind === "write") {
       const path = text(raw.resolvedPath) || text(raw.fileName);
       return path && insidePath(directory, path) ? "approve" : "deny";
     } else if (request.kind === "read") {
       const path = text(raw.resolvedPath) || text(raw.path);
       if (path && (insidePath(directory, path) || [...approvedReads].some(root => insidePath(root, path)))) return "approve";
-      kind = "read"; title = "Read a file outside the workspace"; detail = path;
+      kind = "read"; title = "Read a file outside the workspace"; detail = path; risk = readRisk(path);
+      if (path && !risk && automatic(settings.assistantShell)) return this.autoApproved(turn, kind, title, detail);
     } else if (request.kind === "shell") {
-      if (settings.assistantShell !== "ask") return "deny";
-      if (conversation?.grants?.includes("shell")) return "approve";
+      if (settings.assistantShell === "off") return "deny";
       kind = "shell"; title = `Run a ${host.shell.name} command`; detail = text(raw.fullCommandText, 8000);
       const warning = text(raw.warning, 500);
-      if (warning) detail += `\n\n⚠ ${warning}`;
+      risk = warning ? `the runtime flagged it: ${warning}` : shellRisk(detail, directory);
+      if (detail && !risk && (automatic(settings.assistantShell) || conversation?.grants?.includes("shell"))) return this.autoApproved(turn, kind, title, detail, automatic(settings.assistantShell));
     } else if (request.kind === "url") {
-      if (settings.assistantWeb !== "ask") return "deny";
-      if (conversation?.grants?.includes("url")) return "approve";
-      kind = "url"; title = "Fetch a web page"; detail = text(raw.url, 2000);
+      if (settings.assistantWeb === "off") return "deny";
+      kind = "url"; title = "Fetch a web page"; detail = text(raw.url, 2000); risk = urlRisk(detail);
+      if (detail && !risk && (automatic(settings.assistantWeb) || conversation?.grants?.includes("url"))) return this.autoApproved(turn, kind, title, detail, automatic(settings.assistantWeb));
     } else return "deny";
     if (!detail) return "deny";
-    const permission: ChatPermission = { id: randomUUID(), kind, title, detail, intention: text(raw.intention, 500) || undefined, status: "pending" };
+    // Sensitive or destructive actions always need an individual decision, even with automatic mode or a per-response grant.
+    if (risk) title = `Sensitive: ${title.charAt(0).toLowerCase()}${title.slice(1)}`;
+    const permission: ChatPermission = { id: randomUUID(), kind, title, detail, intention: text(raw.intention, 500) || undefined, risk, status: "pending" };
     (turn.permissions ??= []).push(permission);
     turn.progress = "Waiting for your approval…";
     this.persist();
@@ -1034,21 +1039,30 @@ export class ChatService {
         resolve(status === "approved" || status === "approved-chat" ? "approve" : "deny");
       };
       signal.addEventListener("abort", abort, { once: true });
-      this.pendingPermissions.set(permission.id, { turnId: turn.id, conversationId, kind, finish });
+      this.pendingPermissions.set(permission.id, { turnId: turn.id, conversationId, kind, risk, finish });
     });
     if (turn.status === "working") turn.progress = decision === "approve" ? "Approved; the assistant is continuing…" : "Denied; the assistant is continuing without it…";
     this.persist();
     return decision;
   }
+  /** Records an automatically allowed action on the turn (visible, capped) and approves it. */
+  private autoApproved(turn: StoredTurn, kind: ChatPermission["kind"], title: string, detail: string, log = true): "approve" {
+    const permissions = turn.permissions ??= [];
+    if (log && permissions.filter(item => item.status === "auto").length < 100) {
+      permissions.push({ id: randomUUID(), kind, title, detail, status: "auto" });
+      this.persist();
+    }
+    return "approve";
+  }
   private decidePermission(command: Extract<ChatCommand, { type: "chat.permission" }>): CommandResult {
     const pending = this.pendingPermissions.get(command.requestId);
     if (!pending || pending.turnId !== command.turnId || pending.conversationId !== command.conversationId)
       throw new Error("This approval request is no longer pending.");
-    if (command.decision === "chat" && (pending.kind === "shell" || pending.kind === "url")) {
+    if (command.decision === "chat" && !pending.risk && (pending.kind === "shell" || pending.kind === "url")) {
       const conversation = this.state.conversations.find(item => item.id === command.conversationId);
       if (conversation && !(conversation.grants ??= []).includes(pending.kind)) conversation.grants.push(pending.kind);
       for (const other of [...this.pendingPermissions.values()])
-        if (other !== pending && other.conversationId === command.conversationId && other.kind === pending.kind) other.finish("approved-chat");
+        if (other !== pending && !other.risk && other.conversationId === command.conversationId && other.kind === pending.kind) other.finish("approved-chat");
       pending.finish("approved-chat");
     } else pending.finish(command.decision === "deny" ? "denied" : "approved");
     this.persist();

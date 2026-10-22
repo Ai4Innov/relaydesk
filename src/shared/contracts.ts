@@ -257,8 +257,8 @@ export interface Settings {
   microsoftTenant: string;
   assistantTools: boolean;
   assistantWorkspaceDir: string;
-  assistantShell: "ask" | "off";
-  assistantWeb: "ask" | "off";
+  assistantShell: "auto" | "ask" | "off";
+  assistantWeb: "auto" | "ask" | "off";
   /** New accounts get data access + AI and all discovered sources selected (WhatsApp excepted). */
   fullAccessByDefault: boolean;
   /** Activity approvals happen automatically: attachment downloads/processing and calendar changes without attendees. */

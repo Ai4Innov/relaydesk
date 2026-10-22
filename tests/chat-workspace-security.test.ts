@@ -25,10 +25,10 @@ class MemoryVault {
 const directories: string[] = [];
 afterEach(() => { for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true }); });
 
-function fixture() {
+function fixture(mode: "auto" | "ask" = "ask") {
   const directory = mkdtempSync(join(tmpdir(), "relay-chat-security-"));
   directories.push(directory);
-  const settings = { ...defaultSettings, model: "user-selected", assistantTools: true, assistantShell: "ask" as const };
+  const settings = { ...defaultSettings, model: "user-selected", assistantTools: true, assistantShell: mode, assistantWeb: mode };
   const hooks = {
     changed: vi.fn(), settings: () => settings, workspace: () => ({ tasks: [], settings } as unknown as Snapshot),
     search: vi.fn(async () => []), execute: vi.fn(async () => ({})),
@@ -104,6 +104,40 @@ describe("chat workspace security", () => {
     });
     await f.send("Summarize the newest email", conversationId);
     expect(nextPending).toBe(true);
+    expect(f.chat.snapshot().conversations[0].grants ?? []).toEqual([]);
+  });
+it("runs ordinary actions automatically but stops sensitive ones for an individual decision", async () => {
+    const f = fixture("auto");
+    const safe = { kind: "shell", fullCommandText: "Get-ChildItem | Select-Object Name" } as unknown as PermissionRequest;
+    const destructive = { kind: "shell", fullCommandText: "Remove-Item -Recurse C:\\Users\\me\\Projects" } as unknown as PermissionRequest;
+    const page = { kind: "url", url: "https://example.org/docs" } as unknown as PermissionRequest;
+    const internal = { kind: "url", url: "http://127.0.0.1:9339/json" } as unknown as PermissionRequest;
+    f.hooks.generate.mockImplementationOnce(async request => {
+      expect(await request.workspace!.permission(safe)).toBe("approve");
+      expect(await request.workspace!.permission(page)).toBe("approve");
+      const pending = request.workspace!.permission(destructive);
+      await vi.waitFor(() => expect(f.chat.snapshot().conversations[0].turns.at(-1)!.permissions?.some(item => item.status === "pending")).toBe(true));
+      const conversation = f.chat.snapshot().conversations[0];
+      const turn = conversation.turns.at(-1)!;
+      const card = turn.permissions!.find(item => item.status === "pending")!;
+      expect(card.risk).toContain("deletes");
+      expect(card.title).toMatch(/^Sensitive:/);
+      // "Allow for this response" never becomes a blanket grant for sensitive actions.
+      await f.chat.command({ type: "chat.permission", conversationId: conversation.id, turnId: turn.id, requestId: card.id, decision: "chat" });
+      expect(await pending).toBe("approve");
+      const again = request.workspace!.permission(destructive);
+      const internalFetch = request.workspace!.permission(internal);
+      await vi.waitFor(() => expect(f.chat.snapshot().conversations[0].turns.at(-1)!.permissions?.filter(item => item.status === "pending")).toHaveLength(2));
+      for (const item of f.chat.snapshot().conversations[0].turns.at(-1)!.permissions!.filter(item => item.status === "pending"))
+        await f.chat.command({ type: "chat.permission", conversationId: conversation.id, turnId: turn.id, requestId: item.id, decision: "deny" });
+      expect(await again).toBe("deny");
+      expect(await internalFetch).toBe("deny");
+      return { answer: "Done.", citationIds: [] };
+    });
+    await f.send("Tidy my project");
+    const permissions = f.last().permissions!;
+    expect(permissions.filter(item => item.status === "auto").map(item => item.detail)).toEqual(["Get-ChildItem | Select-Object Name", "https://example.org/docs"]);
+    expect(permissions.find(item => item.risk)?.status).toBe("approved");
     expect(f.chat.snapshot().conversations[0].grants ?? []).toEqual([]);
   });
 });

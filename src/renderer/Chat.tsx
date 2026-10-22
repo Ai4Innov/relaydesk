@@ -77,18 +77,27 @@ function PermissionCard({ permission, turn, conversation, run }: {
     try { await run({ type: "chat.permission", conversationId: conversation.id, turnId: turn.id, requestId: permission.id, decision }); }
     finally { setSending(false); }
   };
-  const label = permission.status === "pending" ? "Needs your approval" : permission.status === "approved" ? "Allowed once"
+  const label = permission.status === "pending" ? (permission.risk ? "Sensitive: needs your approval" : "Needs your approval") : permission.status === "approved" ? "Allowed once"
     : permission.status === "approved-chat" ? "Allowed for this response" : permission.status === "denied" ? "Denied" : "Expired";
   return <section className={`chat-permission chat-permission-${permission.status}`} aria-label={`Permission request: ${permission.title}`}>
     <div className="chat-action-heading"><ShieldCheck size={17}/><h3>{permission.title}</h3><span className="badge" role="status">{label}</span></div>
+    {permission.risk && <p className="chat-permission-risk" role="note"><strong>Safety check:</strong> this action {permission.risk}. It needs your decision before it runs.</p>}
     {permission.intention && <p>{permission.intention}</p>}
     <pre className="chat-permission-detail">{permission.detail}</pre>
     {permission.status === "pending" && <div className="button-row wrap">
       <button className="small" disabled={sending} onClick={() => void decide("once")}><Check size={14}/>Allow once</button>
-      {(permission.kind === "shell" || permission.kind === "url") && <button className="small secondary" disabled={sending} onClick={() => void decide("chat")}>Allow for this response</button>}
+      {!permission.risk && (permission.kind === "shell" || permission.kind === "url") && <button className="small secondary" disabled={sending} onClick={() => void decide("chat")}>Allow for this response</button>}
       <button className="small quiet" disabled={sending} onClick={() => void decide("deny")}><X size={14}/>Deny</button>
     </div>}
   </section>;
+}
+
+function AutoActions({ permissions }: { permissions: ChatPermission[] }) {
+  if (!permissions.length) return null;
+  return <details className="chat-auto-actions">
+    <summary><ShieldCheck size={14}/>{permissions.length} action{permissions.length === 1 ? "" : "s"} ran automatically (passed the safety check)</summary>
+    <ul>{permissions.map(permission => <li key={permission.id}><strong>{permission.title}</strong><pre className="chat-permission-detail">{permission.detail}</pre></li>)}</ul>
+  </details>;
 }
 
 function FileCard({ file, turn, conversation, run }: { file: ChatFile; turn: ChatTurn; conversation: ChatConversation; run: Run }) {
@@ -286,7 +295,8 @@ export function Chat({ data, run, navigate }: ChatProps) {
             {turn.status === "cancelled" && <p className="chat-turn-status"><Square size={12}/>Stopped. Completed actions are not undone.</p>}
             {!!turn.citations.length && <details className="citations chat-citations"><summary>{turn.citations.length} source{turn.citations.length === 1 ? "" : "s"} · inspect evidence</summary>{turn.citations.map(citation => <blockquote key={citation.id}><p>{citation.excerpt}</p>{citation.location && <p className="caption">{citation.location}</p>}<button className="text-button" onClick={() => void run({ type: "open.message", messageId: citation.messageId })}>{citation.title || "Source message"} <ExternalLink size={12}/><span className="sr-only">Open original</span></button></blockquote>)}</details>}
             {turn.citations.some(citation => citation.attachmentId && accessibleDocument(data, citation.attachmentId)?.messageId === citation.messageId) && <div className="chat-document-citations" aria-label="Documents referenced">{turn.citations.filter((citation, index, citations) => citation.attachmentId && accessibleDocument(data, citation.attachmentId)?.messageId === citation.messageId && citations.findIndex(item => item.attachmentId === citation.attachmentId) === index).map(citation => <div className="chat-document-reference" key={citation.attachmentId}><FileText size={18}/><span>{data.attachments.find(attachment => attachment.id === citation.attachmentId)?.name}<small>{citation.location || "Local source document"}</small></span><DocumentActions attachmentId={citation.attachmentId!} viewOnly/></div>)}</div>}
-            {turn.permissions?.map(permission => <PermissionCard key={permission.id} permission={permission} turn={turn} conversation={conversation} run={run}/>)}
+            {turn.permissions?.filter(permission => permission.status !== "auto").map(permission => <PermissionCard key={permission.id} permission={permission} turn={turn} conversation={conversation} run={run}/>)}
+              <AutoActions permissions={turn.permissions?.filter(permission => permission.status === "auto") ?? []}/>
             {!!turn.files?.length && <div className="chat-document-citations" aria-label="Files created">{turn.files.map(file => <FileCard key={file.path} file={file} turn={turn} conversation={conversation} run={run}/>)}</div>}
             {turn.actions.map(action => <ActionCard key={action.id} action={action} turn={turn} conversation={conversation} run={run} blocked={blocked}/>)}
           </article>)}

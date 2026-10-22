@@ -222,3 +222,9 @@
 .chat-welcome.onboarding h2 { margin-top: 0; }
 .chat-welcome.onboarding > p { margin-bottom: 16px; }
 .setup-guide .setup-error { color: #9a3d2b; }
+
+.chat-permission-risk { background: #fdecea; border: 1px solid #f0b9b3; color: #8a2a1f !important; border-radius: 6px; padding: 6px 9px; font-size: 12px !important; }
+.chat-auto-actions { margin-top: 10px; font-size: 12px; color: #5d6b5a; }
+.chat-auto-actions summary { cursor: pointer; display: flex; align-items: center; gap: 6px; }
+.chat-auto-actions ul { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 6px; }
+.chat-auto-actions li strong { display: block; font-weight: 600; margin-bottom: 2px; }

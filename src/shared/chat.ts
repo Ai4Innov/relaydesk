@@ -35,7 +35,9 @@ export interface ChatPermission {
   title: string;
   detail: string;
   intention?: string;
-  status: "pending" | "approved" | "approved-chat" | "denied" | "expired";
+  /** Why this action is sensitive and needs an individual decision (set by the app's safety check). */
+  risk?: string;
+  status: "pending" | "approved" | "approved-chat" | "denied" | "expired" | "auto";
 }
 export interface ChatFile {
   name: string;

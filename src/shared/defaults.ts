@@ -27,8 +27,8 @@ export const defaultSettings: Settings = {
   microsoftTenant: "common",
   assistantTools: true,
   assistantWorkspaceDir: "",
-  assistantShell: "ask",
-  assistantWeb: "ask",
+  assistantShell: "auto",
+  assistantWeb: "auto",
   fullAccessByDefault: true,
   autoApprove: true
 };

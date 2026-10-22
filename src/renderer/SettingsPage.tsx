@@ -386,18 +386,18 @@ function Assistant({ data, run, busy }: Props) {
     </section>
     <section className="card settings-section" aria-label="Assistant tools">
       <div className="settings-heading"><div className="setting-icon"><Wrench/></div><div><h2>Assistant tools</h2>
-        <p>Let chat create files (Word, PDF, Excel, PowerPoint, Markdown…), run commands and fetch web pages, like Copilot CLI. Files stay in the workspace folder; commands and web requests always ask you first.</p></div></div>
+        <p>Let chat create files (Word, PDF, Excel, PowerPoint, Markdown…), run commands and fetch web pages, like Copilot CLI. Files stay in the workspace folder. In Automatic mode actions run without prompts; a built-in safety check still asks you before anything sensitive or destructive (deleting, installing, admin rights, credentials, sending data out, private network).</p></div></div>
       <div className="setting-row compact"><div><strong>Enable assistant tools</strong><p>Turn off to keep chat strictly read-only over your communications.</p></div>
         <Toggle label="Enable assistant tools" checked={tools} disabled={busy} onChange={assistantTools => update({ assistantTools })}/></div>
       <div className="setting-row compact"><div><strong><FolderOpen size={14}/> Workspace folder</strong><p className="mono-path">{data.assistantWorkspace || data.settings.assistantWorkspaceDir || OS_TEXT[hostOS()].documents}</p></div>
         <div className="button-row"><button className="secondary small" disabled={busy} onClick={() => void run({ type: "assistant.workspace.choose" })}>Change…</button>
           <button className="quiet small" disabled={busy} onClick={() => void run({ type: "assistant.workspace.open" })}>Open</button></div></div>
-      <div className="setting-row compact"><div><strong><Terminal size={14}/> Shell commands</strong><p>{OS_TEXT[hostOS()].shell} commands run in the workspace folder after you approve each one (or allow them for one response).</p></div>
-        <select aria-label="Shell commands" value={data.settings.assistantShell} disabled={busy || !tools} onChange={event => update({ assistantShell: event.target.value === "off" ? "off" : "ask" })}>
-          <option value="ask">Ask every time</option><option value="off">Off</option></select></div>
-      <div className="setting-row compact"><div><strong><Globe size={14}/> Web access</strong><p>Fetching a URL asks you first. Email content can never trigger it on its own.</p></div>
-        <select aria-label="Web access" value={data.settings.assistantWeb} disabled={busy || !tools} onChange={event => update({ assistantWeb: event.target.value === "off" ? "off" : "ask" })}>
-          <option value="ask">Ask every time</option><option value="off">Off</option></select></div>
+      <div className="setting-row compact"><div><strong><Terminal size={14}/> Shell commands</strong><p>{OS_TEXT[hostOS()].shell} commands run in the workspace folder. Automatic: only sensitive or destructive commands ask you.</p></div>
+        <select aria-label="Shell commands" value={data.settings.assistantShell} disabled={busy || !tools} onChange={event => update({ assistantShell: event.target.value === "off" ? "off" : event.target.value === "ask" ? "ask" : "auto" })}>
+          <option value="auto">Automatic (ask only for sensitive)</option><option value="ask">Ask every time</option><option value="off">Off</option></select></div>
+      <div className="setting-row compact"><div><strong><Globe size={14}/> Web access</strong><p>Automatic: public pages are fetched directly; private-network addresses or URLs carrying emails, tokens or long data ask you first.</p></div>
+        <select aria-label="Web access" value={data.settings.assistantWeb} disabled={busy || !tools} onChange={event => update({ assistantWeb: event.target.value === "off" ? "off" : event.target.value === "ask" ? "ask" : "auto" })}>
+          <option value="auto">Automatic (ask only for sensitive)</option><option value="ask">Ask every time</option><option value="off">Off</option></select></div>
     </section>
   </>;
 }

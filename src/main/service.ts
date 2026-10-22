@@ -41,7 +41,7 @@ import { moveBrowserCalendarEvent } from "./commands/browser-calendar";
 import { homedir } from "node:os";
 import { fullAccessByDefault } from "./access";
 
-const TOOL_ACCESS_REVISION = 1;
+const TOOL_ACCESS_REVISION = 2;
 
 interface Host {
   changed(): void;
@@ -268,9 +268,9 @@ export class RelayService {
     const storedSettings = vault.get<Settings>("settings", "preferences");
     if (!storedSettings) vault.put("settings", "preferences", { ...defaultSettings, toolAccessRevision: TOOL_ACCESS_REVISION });
     else if ((storedSettings.toolAccessRevision ?? 0) < TOOL_ACCESS_REVISION)
-      // Older builds shipped commands and web access switched off; they now default to per-request approval cards.
+      // Older builds shipped commands and web access off, then ask-every-time; they now run automatically and only sensitive actions ask.
       vault.put("settings", "preferences", { ...storedSettings, assistantTools: true,
-        assistantShell: "ask", assistantWeb: "ask", toolAccessRevision: TOOL_ACCESS_REVISION });
+        assistantShell: "auto", assistantWeb: "auto", toolAccessRevision: TOOL_ACCESS_REVISION });
     this.mailArchive = new BrowserMailArchiveQueue(vault, this.mailReader, {
       enabled: () => this.settings().browserFullMailDownload, paused: () => this.settings().syncPaused,
       maintenance: () => this.stopped || this.restoring || this.freshnessActive,
