@@ -971,7 +971,7 @@ export class RelayService {
         if (!this.browser) throw new Error("The browser companion is unavailable in this build.");
         const pairing = await this.browser.pair();
         for (const account of this.vault.all<Account>("accounts").filter(account => account.connection === "browser" && account.status === "disconnected")) {
-          const full = fullAccessByDefault(this.vault) && account.provider !== "whatsapp";
+          const full = fullAccessByDefault(this.vault);
           this.vault.put("accounts", account.id, { ...account, status: "connected", consent: true, aiEnabled: full });
           for (const source of this.vault.all<Source>("sources").filter(source => source.accountId === account.id))
             this.vault.put("sources", source.id, { ...source, selected: full });
@@ -982,7 +982,7 @@ export class RelayService {
       }
       case "browser.extension": {
         if (!this.host.openBrowserExtension) throw new Error("The browser companion is unavailable in this build.");
-        await this.host.openBrowserExtension(); return { message: "In Chrome or Edge Extensions, enable Developer mode and Load unpacked using this folder. Pair once; no Google OAuth registration is needed." };
+        await this.host.openBrowserExtension(); return { message: "In Chrome or Edge Extensions, enable Developer mode and Load unpacked using this folder (it stays at the same place when Relay Desk is moved or updated; if you loaded the companion from another folder before, remove that one first). Pair once; no Google OAuth registration is needed." };
       }
       case "browser.revoke": {
         this.documentAccessRevision++;
@@ -1001,7 +1001,7 @@ export class RelayService {
               throw new Error("Choose a WhatsApp browser account.");
           }
           await this.host.openExternal("https://web.whatsapp.com/");
-          return { message: "WhatsApp Web opened in your default browser. Use the paired browser profile, link your phone if needed, and verify your own Profile phone before capture. Opening does not enable ingestion or AI." };
+          return { message: "WhatsApp Web opened in your default browser. Use the paired browser profile, link your phone if needed, then open a conversation. Opening itself does not enable ingestion or AI; chats you open are captured according to your access settings." };
         }
         const account = command.accountId ? this.account(command.accountId) : undefined;
         if (account && account.provider !== "gmail") throw new Error("Browser mode currently supports Google accounts only.");

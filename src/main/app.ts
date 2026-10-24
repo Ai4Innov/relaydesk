@@ -1,5 +1,5 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, Notification, safeStorage, shell, Tray } from "electron";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { randomBytes, createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -118,7 +118,11 @@ async function start(): Promise<void> {
   const vault = new Vault(directory, key);
   if (process.env.RELAY_E2E) console.info("[Relay Desk] Encrypted archive opened.");
   key.fill(0);
-  const extensionDirectory = join(__dirname, "browser-extension");
+  // Browsers load the companion from a fixed path; keep a copy in the data folder so moving or rebuilding the app never breaks it.
+  const bundledExtension = join(__dirname, "browser-extension");
+  let extensionDirectory = join(directory, "browser-extension");
+  try { cpSync(bundledExtension, extensionDirectory, { recursive: true, force: true }); }
+  catch (error) { console.warn("Could not refresh the browser companion copy:", safeError(error)); extensionDirectory = bundledExtension; }
   const extensionManifest = JSON.parse(readFileSync(join(extensionDirectory, "manifest.json"), "utf8")) as { key: string };
   const extensionId = createHash("sha256").update(Buffer.from(extensionManifest.key, "base64")).digest("hex").slice(0, 32)
     .replace(/[0-9a-f]/g, character => String.fromCharCode(97 + parseInt(character, 16)));

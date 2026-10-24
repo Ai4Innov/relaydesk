@@ -8,7 +8,7 @@ Relay Desk uses Gmail's normal message view and can mark that conversation read.
 ## Install and connect
 
 1. Start and unlock Relay Desk, enable browser access, and generate a pairing code in its browser settings.
-2. Open `chrome://extensions` or `edge://extensions`, enable Developer mode, choose **Load unpacked**, and select this project's `browser-extension` directory.
+2. Open `chrome://extensions` or `edge://extensions`, enable Developer mode, choose **Load unpacked**, and select the folder opened by **Open companion folder** in Relay Desk (a copy kept in Relay Desk's data folder, refreshed on every start, so moving or rebuilding the app does not break the extension).
 3. Open the extension popup from any tab, including a new tab. No Gmail/Calendar page or account link is required to pair.
 4. Enter the desktop pairing code and choose **Pair**. This connects the browser profile, not one account. Existing Gmail/Calendar tabs are discovered in the background; having none open does not prevent pairing. Reload older provider tabs after installing/updating the companion if they cannot respond.
 5. Use **Discover open Google accounts** to repeat discovery across open tabs. Open Gmail or Calendar once for any account not yet loaded in this browser profile. Hidden tabs discover metadata only; **Connect current tab** retries an individual tab. Discovery sends only the signed-in account's email/name, page URL, and source kind.
@@ -76,22 +76,22 @@ browser instead. Reload an updated unpacked companion and the WhatsApp tab;
 the existing pairing is retained. Link your phone using WhatsApp's normal
 QR-code flow if needed. There is no WhatsApp API credential integration.
 
-Open a conversation yourself, then open your **own Profile** panel from
-WhatsApp's left navigation. Keep its **Phone number** visible. The companion
-requires a supported English/French own-profile panel and an international
-phone number on every discovery/capture; unsupported layouts fail closed.
-It never derives the signed-in account from a contact, display name, avatar,
-cookie, internal application store, page script or private API. The normalized
-own phone number identifies the account across paired profiles; different
-numbers cannot collapse into a shared “WhatsApp” account.
+Once WhatsApp Web has loaded, the companion identifies the account from
+WhatsApp's own record of the linked phone (the `last-wid-md` login entry in
+web.whatsapp.com's storage), re-read on every discovery/capture. If that entry
+is missing, it falls back to your **own Profile** panel's **Phone number**
+(English/French layouts). It never derives the account from a contact, display
+name, avatar, cookie, page script or private API, and a mismatch between the
+two fails closed. Different numbers never collapse into a shared account.
 
-Use **Connect current tab**. New WhatsApp accounts have **local ingestion off**
-and **AI off**. Enable ingestion, select the individually discovered chat source
-in desktop Settings, and choose **Capture now**. Open each additional chat to
-discover its separate opt-in. Conversation/message identifiers come only from
-the visible rendered message DOM. Chats with no supported loaded stable IDs
-are not guessed from potentially duplicate names.
-
+Open a conversation yourself. With **Full access by default** (the default),
+the WhatsApp account and every chat you open are captured and shared with AI
+automatically; exclude the account or any chat in desktop Settings. With it
+off, new WhatsApp accounts have ingestion and AI off until you enable them and
+select chats. Conversation/message identifiers come only from the rendered
+message DOM (`data-id`); chats with no loaded stable IDs are not guessed.
+Received times are parsed from WhatsApp's displayed `[time, date]` header;
+day/month ambiguity follows the browser language.
 Coverage is the last 200 supported **currently loaded visible message bubbles**
 of the selected open chat, never the entire account/history. “Full” means the
 captured bubble text, not a complete conversation. Original displayed timestamps

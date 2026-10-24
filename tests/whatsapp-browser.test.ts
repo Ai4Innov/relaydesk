@@ -21,10 +21,15 @@ describe("visible WhatsApp Web capture", () => {
     browser = await chromium.launch({ headless: true, ...(existsSync(chromium.executablePath()) ? {} : { channel: "msedge" }) });
   });
   afterAll(async () => { await browser?.close(); }, 30_000);
-  async function read(html: string, work: "identity" | "extract" = "extract") {
+  async function read(html: string, work: "identity" | "extract" = "extract", storedWid?: string) {
     const page = await browser.newPage();
     try {
-      await page.setContent(html);
+      if (storedWid === undefined) await page.setContent(html);
+      else {
+        await page.route("https://web.whatsapp.com/**", route => route.fulfill({ contentType: "text/html", body: html }));
+        await page.addInitScript(wid => localStorage.setItem("last-wid-md", wid), storedWid);
+        await page.goto("https://web.whatsapp.com/");
+      }
       await page.addScriptTag({ path: resolve("browser-extension", "whatsapp.js") });
       await page.addScriptTag({ path: resolve("browser-extension", "extractors.js") });
       return await page.evaluate(({ url, work }) => {
@@ -45,7 +50,7 @@ describe("visible WhatsApp Web capture", () => {
     expect(value.identity).toMatchObject({ accountEmail: "+33612345678", kind: "whatsapp", chat: { id: "33699999999@c.us", name: "Alice" } });
     expect(value.result?.messages[0]).toMatchObject({ id: "false_33699999999@c.us_ABC123",
       threadId: "33699999999@c.us", sender: "Alice", body: "A loaded WhatsApp message", dateText: "09:20, 23/09/2026", completeness: "full" });
-    expect(value.result?.messages[0].receivedAt).toBeUndefined();
+    expect(value.result?.messages[0].receivedAt).toBe(new Date(2026, 8, 23, 9, 20).toISOString());
     expect(value.result?.coverage).toContain("Older/unloaded");
     expect(value.clicks).toBe(0);
   });
@@ -58,6 +63,29 @@ describe("visible WhatsApp Web capture", () => {
     const first = await read(fixture(), "identity");
     const second = await read(fixture(ownProfile.replace("+33 6 12 34 56 78", "+44 7700 900123")), "identity");
     expect(first.identity.accountEmail).not.toBe(second.identity.accountEmail);
+  });
+  it("identifies the own account from WhatsApp's stored login without an open Profile panel", async () => {
+    const value = await read(fixture(""), "extract", '"33612345678:12@c.us"');
+    expect(value.identity.accountEmail).toBe("+33612345678");
+    expect(value.result?.messages[0].sender).toBe("Alice");
+    await expect(read(fixture(ownProfile.replace("+33 6 12 34 56 78", "+44 7700 900123")), "identity", '"33612345678@c.us"')).rejects.toThrow();
+    await expect(read(fixture(""), "identity", '"Alice"')).rejects.toThrow("identity is not verified");
+  });
+  it("parses displayed WhatsApp dates with locale-aware day/month order", async () => {
+    const page = await browser.newPage();
+    try {
+      await page.addScriptTag({ path: resolve("browser-extension", "whatsapp.js") });
+      const now = new Date(2026, 9, 1).getTime();
+      const out = await page.evaluate(now => {
+        const { displayedDate } = (globalThis as unknown as { RelayWhatsApp: { displayedDate(v: string, l: string, n?: number): string | undefined } }).RelayWhatsApp;
+        return [displayedDate("09:20, 23/09/2026", "fr-FR", now), displayedDate("9:20 PM, 9/23/2026", "en-US", now),
+          displayedDate("09:20, 03/04/2026", "en-GB", now), displayedDate("09:20, 03/04/2026", "en-US", now),
+          displayedDate("09:20, 23/09/26", "en-GB", now), displayedDate("09:20, 31/02/2026", "en-GB", now),
+          displayedDate("09:20, 23/12/2026", "en-GB", now), displayedDate("yesterday", "en-GB", now)];
+      }, now);
+      expect(out).toEqual([new Date(2026, 8, 23, 9, 20), new Date(2026, 8, 23, 21, 20), new Date(2026, 3, 3, 9, 20),
+        new Date(2026, 2, 4, 9, 20), new Date(2026, 8, 23, 9, 20)].map(d => d.toISOString()).concat([undefined, undefined, undefined] as never[]));
+    } finally { await page.close(); }
   });
   it("fails closed when a transition exposes messages from different chats", async () => {
     await expect(read(fixture(ownProfile, bubble() + bubble("447700900123@c.us")))).rejects.toThrow("conversation changed");

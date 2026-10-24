@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import type { Command, CommandResult, Snapshot } from "../shared/contracts";
 import type { BrowserPairing } from "../shared/browser";
 import { ACCOUNT_LINK_MAX_LENGTH, parseBrowserAccountLink } from "../shared/browser-account-link";
@@ -14,7 +14,7 @@ export function BrowserSetup({ data, busy, run }: { data: Snapshot; busy: boolea
     <h2>Connect your browser</h2>
     <p>Pair your Chrome or Edge browser profile with a code only. No account link or open Gmail tab is needed to pair. Account discovery comes afterwards: each Google account appears separately, with its own Gmail, Calendar and AI controls.</p>
     <ol>
-      <li>Open the companion folder. In Chrome or Edge Extensions, enable Developer mode and choose Load unpacked, then select that folder.</li>
+      <li>Open the companion folder. In Chrome or Edge Extensions, enable Developer mode and choose Load unpacked, then select that folder. It stays in Relay Desk's data folder, so moving or updating the app does not break it; if you loaded the companion from another folder before, remove that copy first.</li>
       <li>Generate a fresh pairing code here for each browser and enter it in that browser's Relay Desk companion popup. Pin the companion for easy access. Paired browsers will reconcile all already-open Gmail and Calendar tabs, including hidden tabs.</li>
       <li>In the companion, choose Discover signed-in Google accounts and approve optional access to Google's account-menu widget. Keep a Gmail or Calendar page open. Each signed-in account gets a verified inbox view; expired sessions still need Google sign-in. Discover open Google accounts remains available without that optional access.</li>
       <li>Select the discovered account's sources below, then use Refresh now here or Capture now in the companion when you want the current loaded page captured immediately.</li>
@@ -50,9 +50,9 @@ export function BrowserSetup({ data, busy, run }: { data: Snapshot; busy: boolea
     <div className="account-card">
       <h3>WhatsApp Web Â· same Edge companion</h3>
       <p>No WhatsApp API token or business account is needed. Reload the updated companion in your already-paired Edge profile (pairing is preserved), then open WhatsApp Web there and link your phone using WhatsApp's normal QR-code flow if needed. The desktop button opens your default browser; the companion's Open WhatsApp Web button uses that companion's profile.</p>
-      <p>Open a conversation, then open your own Profile panel from WhatsApp's left navigation and keep its Phone number visible. Relay Desk verifies that phone number on every capture, never a contact name or a chat participant's number. Unsupported profile layouts fail closed.</p>
-      <p>Choose Connect current tab in the companion. Enable this WhatsApp account's local ingestion and select each discovered chat under Accounts &amp; selected sources. Then choose Capture now. Open other chats yourself to discover their separate source switches. AI sharing starts off and requires a separate opt-in.</p>
-      <p>Only loaded text bubbles and supported file-name metadata from the selected conversation are captured, not all history, voice notes or view-once media. Displayed timestamps are retained without guessing ambiguous dates. Download attachments yourself and import the matching copy when offered. Drafts stay local: copy and open WhatsApp, review and send manually. Relay Desk never clicks Send.</p>
+      <p>Once WhatsApp Web has loaded, the companion identifies your account from WhatsApp's own record of the linked phone number (re-checked on every capture), never from a contact name or a chat participant's number. If that record is unavailable, open your own Profile panel once so its Phone number is visible.</p>
+      <p>Open a conversation. With Full access by default (Settings), each chat you open is captured automatically and shared with AI; you can exclude the account or any chat under Accounts &amp; selected sources. With it off, enable this account's ingestion and select chats yourself.</p>
+      <p>Only loaded text bubbles and supported file-name metadata from the selected conversation are captured, not all history, voice notes or view-once media. Dates come from WhatsApp's displayed timestamps (day/month order follows your browser language). Download attachments yourself and import the matching copy when offered. Drafts stay local: copy and open WhatsApp, review and send manually. Relay Desk never clicks Send.</p>
     </div>
     <details className="account-card">
     <summary>Add account by link (optional)</summary>

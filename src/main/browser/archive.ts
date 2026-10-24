@@ -39,9 +39,9 @@ export class BrowserArchive {
       throw new Error("Invalid WhatsApp account or chat identity.");
     const email = input.accountEmail.trim().toLowerCase(), accountId = browserAccountId(email, input.kind);
     const existing = this.vault.get<Account>("accounts", accountId);
-    const full = !whatsapp && fullAccessByDefault(this.vault);
+    const full = fullAccessByDefault(this.vault);
     const account: Account = existing ?? { id: accountId, provider: whatsapp ? "whatsapp" : "gmail", connection: "browser", email,
-      name: input.accountName || email, consent: !whatsapp, aiEnabled: full, status: "connected" };
+      name: input.accountName || email, consent: !whatsapp || full, aiEnabled: full, status: "connected" };
     // A disconnected/forgotten account must not be silently re-authorized by an open tab.
     if (this.vault.get("checkpoints", `browser-forgotten:${accountId}`)) throw new Error("This browser account was forgotten. Pair again to authorize discovery.");
     if (existing?.status === "disconnected") throw new Error("This browser account is disconnected. Pair again to reconnect.");
@@ -56,7 +56,7 @@ export class BrowserArchive {
           const id = registrationSourceId(accountId, input)!;
           if (!this.vault.get("sources", id)) this.vault.put("sources", id, { id, accountId,
             providerId: input.chat.id, kind: "channel", name: `${input.chat.name || input.chat.id} · WhatsApp (${input.chat.id})`,
-            selected: false } satisfies Source);
+            selected: full && (existing?.consent ?? true) } satisfies Source);
         }
         for (const kind of whatsapp ? [] : ["mail", "calendar"] as const) {
           const id = sourceId(accountId, kind);

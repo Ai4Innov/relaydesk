@@ -1512,7 +1512,7 @@
         discovered,
         failed,
         message: attempted
-          ? `Asked ${attempted} open supported tab${attempted === 1 ? "" : "s"} to disclose loaded account metadata. ${discovered} responded; ${failed} failed. Google needs its account header; WhatsApp needs your own Profile phone visible.${failed ? " Reload failed tabs after the extension update, then retry." : ""}`
+          ? `Asked ${attempted} open supported tab${attempted === 1 ? "" : "s"} to disclose loaded account metadata. ${discovered} responded; ${failed} failed. Google needs its account header; WhatsApp needs to finish loading after you link your phone.${failed ? " Reload failed tabs after the extension update, then retry." : ""}`
           : "No open Gmail, Google Calendar or WhatsApp Web tabs were found."
       };
     }
@@ -1860,7 +1860,7 @@
       }
       if (message.type === "open-whatsapp") {
         await openView("https://web.whatsapp.com/");
-        return { message: "WhatsApp Web opened in this browser profile. Link your phone if needed, then open your own Profile phone number and a conversation. Local ingestion, chat selection and AI are separate opt-ins." };
+        return { message: "WhatsApp Web opened in this browser profile. Link your phone if needed, then open a conversation; each chat you open is captured (exclude chats in Relay Desk settings)." };
       }
       if (message.type === "discover-signed-in-accounts") {
         return await discoverSignedInAccounts();

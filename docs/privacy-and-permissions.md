@@ -19,7 +19,7 @@ Follow the [provider setup guide](provider-setup.md) for registration, redirect 
 | Native email draft | Gmail/Outlook only after an explicit Save draft action. |
 | Calendar change | Selected provider calendar after exact approval; invitations/updates can notify attendees. |
 | Slack response | Local draft and, on request, the system clipboard. Posting is done by the user outside Relay Desk. |
-| WhatsApp Web | Only loaded messages in explicitly selected chats, after local-ingestion consent and verified own-profile phone identity. AI sharing is a separate opt-in; replies stay local for manual copy/send. |
+| WhatsApp Web | Only loaded messages in chats you open, identified by WhatsApp's own record of your linked phone. Captured and shared with AI automatically under Full access by default (exclude any account or chat in Settings); otherwise separate opt-ins. Replies stay local for manual copy/send. |
 | Internal document preview | Local PDF/image rendering or extracted text; no executable embedded content or remote document service. |
 | Added folders and shared links | Read-only. Files are parsed locally and only the extracted text is stored in the encrypted archive. Shared links are fetched anonymously, with no cookies or account credentials, so only "Anyone with the link" content is reachable, and the link host sees the download requests. Excerpts go to the AI provider only while the source's AI switch is on. |
 | Save to Downloads | Explicit export of a retained original through the native save dialog. The resulting ordinary file is outside the encrypted archive and is not erased when an account is forgotten. |
