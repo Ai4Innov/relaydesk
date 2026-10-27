@@ -1,13 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { isAbsolute, join, parse, sep } from "node:path";
 import { mkdir } from "node:fs/promises";
-import type { Account, ActionItem, Approval, Attachment, CalendarEvent, Citation, Command, CommandResult, Draft, Job, Message, Settings, Snapshot, Source } from "../shared/contracts";
+import type { Account, ActionItem, Approval, Attachment, CalendarEvent, Citation, Command, CommandResult, Draft, EventChange, Job, Message, Settings, Snapshot, Source } from "../shared/contracts";
 import { defaultSettings } from "../shared/defaults";
 import { Vault } from "./storage/vault";
 import { Retrieval } from "./retrieval";
 import { ConnectorHub } from "./connectors";
 import { GMAIL_RELAY_PROVIDER_ID } from "./connectors/gmail-relay";
 import { AttachmentProcessor, extractIsolated } from "./attachments";
+import { ensureOcrModels } from "./attachments/ocr-models";
 import { KnowledgeLibrary } from "./knowledge";
 import { browserAttachmentGuard, importBrowserAttachment, processRetainedBrowserAttachment } from "./attachments/browser-import";
 import { attachmentViewGuard, saveAttachment, viewAttachment } from "./attachments/viewing";
@@ -40,6 +41,9 @@ import { gmailRelayCommand } from "./commands/gmail-relay";
 import { moveBrowserCalendarEvent } from "./commands/browser-calendar";
 import { homedir } from "node:os";
 import { fullAccessByDefault } from "./access";
+import { isBulkMessage } from "../shared/priority";
+import { googleCalendarTemplateUrl, isGoogleCalendarTemplateUrl } from "../shared/calendar-link";
+import { validateChange as validateCalendarChange } from "./connectors/calendar";
 
 const TOOL_ACCESS_REVISION = 2;
 
@@ -67,6 +71,12 @@ interface Host {
   renderPdf?(html: string): Promise<Buffer>;
   chooseFolder?(title: string, defaultPath: string): Promise<string | undefined>;
 }
+const AUTO_FOCUS_INTERVAL_MS = 2 * 60_000;
+const AUTO_FOCUS_YIELD_MS = 90_000;
+const AUTO_REVIEW_WINDOW_DAYS = 14;
+const AUTO_REVIEW_BATCHES = 3;
+const AUTO_REPORT_MIN_AGE_MS = 15 * 60_000;
+const AUTO_REPORT_MAX_AGE_MS = 3 * 60 * 60_000;
 interface BrowserDraftContext {
   account: Account;
   message: Message;
@@ -103,6 +113,11 @@ export class RelayService {
   private browserCaptures = 0;
   private browserCaptureTail: Promise<void> = Promise.resolve();
   private browserAiBusy = false;
+  /** Last interactive (chat) AI request; background automation yields for a while after it. */
+  private interactiveAt = 0;
+  private autoFocusAt = 0;
+  private autoFocusRunning = false;
+  private autoReportSignature = "";
   private documentAccessRevision = 0;
   private documentSaving = false;
   private freshness!: MailFreshness;
@@ -125,7 +140,8 @@ export class RelayService {
           throw new Error("Browser attachment bytes require an authorized native browser download or an imported copy, never API credentials.");
         return this.connectors.downloadAttachment(account, attachment, signal);
       },
-      { modelDirectory: join(directory, "models"), thresholdMb: () => this.settings().attachmentThresholdMb, autoApprove: () => this.settings().autoApprove }
+      { modelDirectory: join(directory, "models"), thresholdMb: () => this.settings().attachmentThresholdMb, autoApprove: () => this.settings().autoApprove,
+        prepareModels: () => ensureOcrModels(join(directory, "models")) }
     );
     this.knowledge = new KnowledgeLibrary(vault, {
       changed: host.changed,
@@ -165,8 +181,8 @@ export class RelayService {
         beforeWrite?.();
         const account = this.account(change.accountId);
         const source = this.vault.get<Source>("sources", change.sourceId);
-        if (!source || source.accountId !== account.id || source.kind !== "calendar" || account.demo || account.connection === "browser")
-          throw new Error("Choose an authorized API calendar for task scheduling.");
+        if (!source || source.accountId !== account.id || source.kind !== "calendar" || account.demo)
+          throw new Error("Choose an authorized calendar for task scheduling.");
         if (change.attendees.length) throw new Error("Task scheduling only creates private events without attendees.");
         if (!source.selected) await this.command({ type: "source.select", sourceId: source.id, selected: true });
         const proposed = await this.command({ type: "calendar.propose", change }, beforeWrite);
@@ -182,7 +198,8 @@ export class RelayService {
       changed: host.changed, settings: () => this.settings(), workspace: () => this.snapshot(),
       search: (query, accountId) => this.retrieval.search(query, accountId),
       refreshMail: request => this.refreshMail(request),
-      generate: request => this.runAi(() => this.ai.chat(request)),
+      prepareAttachment: id => this.prepareAttachment(id),
+      generate: request => { this.interactiveAt = Date.now(); return this.runAi(() => this.ai.chat(request), request.signal ?? true); },
       workspaceDirectory: () => this.assistantWorkspace(),
       renderPdf: this.host.renderPdf ? html => this.host.renderPdf!(html) : undefined,
       knowledge: this.knowledge,
@@ -342,6 +359,25 @@ export class RelayService {
       if (job.status === "running" || job.status === "pending") vault.put("jobs", job.id, { ...job, status: "paused", detail: "Interrupted by application shutdown. Retry to reconcile and resume.", updatedAt: now() });
     for (const approval of vault.all<Approval>("approvals"))
       if (approval.status === "executing") vault.put("approvals", approval.id, { ...approval, status: "uncertain", error: "Interrupted while saving. Inspect your provider calendar before creating a new proposal." });
+    // Nothing is processing at startup: requeue interrupted work and failures that later
+    // releases can now handle (OCR models installed on demand, fixed PDF renderer crash).
+    for (const attachment of vault.all<Attachment>("attachments"))
+      if (attachment.status === "extracting" || attachment.status === "downloading"
+        || (attachment.status === "blocked" && /OCR\/transcription models are not configured/.test(attachment.reason ?? ""))
+        || (attachment.status === "failed" && /exited without an extraction result/.test(attachment.reason ?? "")))
+        vault.put("attachments", attachment.id, { ...attachment, status: "pending", reason: "Queued again for local extraction." });
+  }
+  /** Chat on-demand reading: download/extract one attachment now, waiting briefly for other attachment work. */
+  private async prepareAttachment(attachmentId: string): Promise<void> {
+    const deadline = Date.now() + 120_000;
+    while ((this.attachmentBusy || this.browserDownloads.running) && Date.now() < deadline)
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    const attachment = this.vault.get<Attachment>("attachments", attachmentId);
+    if (!attachment || ["indexed", "partial", "unsupported"].includes(attachment.status)) return;
+    const approved = this.settings().autoApprove;
+    if (attachment.browser?.source === "browser_gmail" && !attachment.gmailApi && !attachment.hash)
+      await this.command({ type: "attachment.download", attachmentId, approved });
+    else await this.command({ type: "attachment.process", attachmentId, approved });
   }
   private relayStatuses() {
     const connectors = this.connectors as unknown as { relayStatuses?: () => NonNullable<Snapshot["gmailRelays"]> };
@@ -400,6 +436,7 @@ export class RelayService {
         this.knowledge.syncDue();
       }
       if (this.settings().syncPaused || this.stopped || this.restoring) return;
+      void this.autoFocus();
       void this.processPendingAttachments().catch(() => { /* Individual attachment failures are recorded by runJob. */ });
       const interval = this.settings().refreshIntervalSeconds;
       if (!interval || Date.now() - this.lastScheduledRefresh < interval * 1000) return;
@@ -760,6 +797,8 @@ export class RelayService {
     const id = `action:${message.id}`;
     const existing = this.vault.get<ActionItem>("actions", id);
     if (existing) return;
+    // Newsletters and notifications are never keyword-rule tasks; the AI review still reads them.
+    if (isBulkMessage(message)) return;
     const question = /\?|please|could you|can you|need your|action required/i.test(message.body);
     if (!question) return;
     const urgent = /\burgent\b|\basap\b|\bblocked\b|\btoday\b/i.test(message.body);
@@ -812,7 +851,71 @@ export class RelayService {
       }
     } finally { this.browserAiBusy = false; }
   }
-  private async runAi<T>(task: () => Promise<T>): Promise<T> {
+  /** `wait`: interactive requests queue behind a running background request instead of failing. */
+  /**
+   * Keeps tasks and the focus report current without a click: reviews new mail (priority organizations first,
+   * newsletters skipped) and regenerates the focus report when the top tasks change. Uses the normal AI budget.
+   */
+  private async autoFocus(): Promise<void> {
+    const settings = this.settings();
+    if (this.autoFocusRunning || !settings.autoFocus || !settings.backgroundAi || !settings.model || this.aiBusy || this.freshnessActive
+      || this.stopped || this.restoring || settings.aiRunsToday >= settings.dailyAiLimit || this.ai.active.status.status !== "ready"
+      || Date.now() - this.autoFocusAt < AUTO_FOCUS_INTERVAL_MS || Date.now() - this.interactiveAt < AUTO_FOCUS_YIELD_MS) return;
+    this.autoFocusAt = Date.now();
+    this.autoFocusRunning = true;
+    try {
+      const review = this.productivity.review;
+      const since = new Date(Date.now() - AUTO_REVIEW_WINDOW_DAYS * 86_400_000).toISOString();
+      if (!review.running && review.recentPending(since) > 0) {
+        review.start(AUTO_REVIEW_BATCHES, { since });
+        await review.settled();
+      }
+      const after = this.settings();
+      if (this.stopped || this.aiBusy || after.aiRunsToday >= after.dailyAiLimit || Date.now() - this.interactiveAt < AUTO_FOCUS_YIELD_MS) return;
+      const open = (this.snapshot().tasks ?? []).filter(task => task.status !== "done").slice(0, 8);
+      const signature = open.map(task => `${task.id}:${task.priority}:${task.dueAt ?? ""}`).join("|");
+      const latest = this.vault.all<{ generatedAt: string }>("reports").reduce((max, report) => report.generatedAt > max ? report.generatedAt : max, "");
+      const age = latest ? Date.now() - Date.parse(latest) : Number.POSITIVE_INFINITY;
+      if (!open.length || age < AUTO_REPORT_MIN_AGE_MS || (signature === this.autoReportSignature && age < AUTO_REPORT_MAX_AGE_MS)) return;
+      this.autoReportSignature = signature;
+      await this.command({ type: "report.generate", prompt: "Automatic refresh: what deserves focus now, professional work first." });
+    } catch { /* Failures are recorded on the review state or the job list; the next cycle retries. */ }
+    finally { this.autoFocusRunning = false; }
+  }
+  /**
+   * Browser-connected calendars cannot be written, so the event is kept in Relay Desk's own calendar for that
+   * account (shown in the agenda and used for conflicts), with a link that pre-fills Google Calendar.
+   * Only events Relay Desk created can be edited this way; nobody is notified.
+   */
+  private saveLocalEvent(account: Account, change: EventChange): CommandResult {
+    const source = this.selectedSource(change.sourceId, account.id);
+    if (account.demo || source.kind !== "calendar") throw new Error("Choose a real connected calendar.");
+    validateCalendarChange(change);
+    const existing = change.eventId ? this.vault.get<CalendarEvent>("events", change.eventId) : undefined;
+    if (change.eventId && (!existing || existing.accountId !== account.id || existing.sourceId !== source.id))
+      throw new Error("The event is not in this calendar.");
+    if (existing && !existing.local) throw new Error("This Google Calendar event can only be changed in Google Calendar.");
+    if (existing && change.expectedRevision && existing.revision !== change.expectedRevision)
+      throw new Error("The event changed since it was loaded. Review it again.");
+    const id = existing?.id ?? `local:${randomUUID()}`;
+    const event: CalendarEvent = {
+      id, accountId: account.id, sourceId: source.id, providerId: id,
+      title: change.title.trim(), start: change.start, end: change.end, timeZone: change.timeZone, allDay: change.allDay,
+      attendees: change.attendees.filter(value => value.trim()), location: change.location, description: change.description,
+      revision: randomUUID(), url: googleCalendarTemplateUrl(change, account.email), writable: true,
+      reminderMinutes: change.reminderMinutes, local: true
+    };
+    this.vault.transaction(() => {
+      this.vault.put("events", id, event);
+      this.vault.put("audit", `calendar-local:${randomUUID()}`, { accountId: account.id, kind: existing ? "calendar.local.update" : "calendar.local.create", eventId: id, at: now() });
+    });
+    this.host.changed();
+    return { eventId: id, message: `${existing ? "Updated" : "Added"} in your Relay Desk calendar (${account.email}). Google Calendar itself is unchanged; use "Add to Google Calendar" on the event to copy it there.` };
+  }
+  private async runAi<T>(task: () => Promise<T>, wait: boolean | AbortSignal = false): Promise<T> {
+    const signal = typeof wait === "object" ? wait : undefined;
+    for (const until = Date.now() + 180_000; wait && this.aiBusy && Date.now() < until && !signal?.aborted;) await new Promise(resolve => setTimeout(resolve, 250));
+    signal?.throwIfAborted();
     if (this.aiBusy) throw new Error("Another AI request is running. Please wait.");
     const settings = this.settings();
     if (settings.aiRunsToday >= settings.dailyAiLimit) throw new Error("Your local daily AI-run budget is exhausted. Sync, search and editing still work.");
@@ -1254,13 +1357,14 @@ export class RelayService {
         const citations = (await this.retrieval.search(command.query, command.accountId))
           .filter(citation => this.citationAllowedForAi(citation));
         if (!citations.length) throw new Error("No eligible evidence found. Select sources, finish indexing and enable AI for the relevant account.");
+        this.interactiveAt = Date.now();
         return this.runJob("ai", "Answer from your archive", async () => this.runAi(async () => {
           const result = await this.ai.generate(`Answer the user's question using only the supplied archive excerpts: ${command.query}`, citations, command.model || this.settings().model);
           for (const citation of citations) this.requireMessageAi(this.message(citation.messageId));
           if (!citations.every(citation => this.citationAllowedForAi(citation)))
             throw new Error("Answer evidence permissions changed during generation.");
           return { answer: result.answer, citations: citations.filter(c => result.citationIds.includes(c.id)) };
-        }));
+        }, true));
       }
       case "attachment.view":
       case "attachment.save": {
@@ -1351,7 +1455,7 @@ export class RelayService {
       }
       case "calendar.propose": {
         const account = this.account(command.change.accountId);
-        if (account.connection === "browser") throw new Error("Browser calendars are read-only. Create or edit meetings in Google Calendar.");
+        if (account.connection === "browser") return this.saveLocalEvent(account, command.change);
         const source = this.selectedSource(command.change.sourceId, account.id);
         if (account.demo || source.kind !== "calendar") throw new Error("Choose a real connected calendar.");
         if (command.change.eventId) {
@@ -1392,6 +1496,14 @@ export class RelayService {
           this.vault.put("approvals", approval.id, { ...approval, status: "uncertain", error: safeError(error) + " Inspect the provider calendar before creating another proposal." });
           throw error;
         } finally { this.host.changed(); }
+      }
+      case "calendar.openInGoogle": {
+        const event = this.vault.get<CalendarEvent>("events", command.eventId);
+        if (!event?.local || !isGoogleCalendarTemplateUrl(event.url)) throw new Error("Only Relay Desk calendar events can be copied to Google Calendar.");
+        const account = this.account(event.accountId);
+        this.selectedSource(event.sourceId, account.id);
+        await this.host.openExternal(event.url);
+        return { message: "Google Calendar opened with the event filled in. Click Save there to add it." };
       }
       case "message.downloadAll": {
         this.mailArchive.retry();

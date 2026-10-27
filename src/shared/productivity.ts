@@ -51,6 +51,9 @@ export interface TaskItem {
   citations: Citation[];
   schedule?: TaskSchedule;
   focusRank?: number;
+  /** Who the work is for, e.g. "finco.digital (priority 1)", "other professional", "personal". */
+  context?: string;
+  contextTier?: "priority" | "professional" | "personal" | "bulk";
 }
 
 export interface FocusReportMetrics {

@@ -89,7 +89,7 @@ Explicit approval is required for unknown sizes, downloads above 25 MiB or a low
 
 ### Optional local models and media
 
-OCR and transcription models are manually supplied under the application's `models` directory. Review model/tool licenses and provenance before installing them. There is no automatic downloader for these optional models.
+English and French OCR models (pinned, hash-verified `tessdata_fast`) are installed automatically into the application's `models` directory by `src/main/attachments/ocr-models.ts`; a user-supplied `ocr` entry is never replaced. Transcription models and tools are manually supplied there. Review model/tool licenses and provenance before installing them.
 
 The attachment worker reads a `models.json` manifest:
 

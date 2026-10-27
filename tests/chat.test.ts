@@ -629,6 +629,23 @@ describe("chat agent tools, consent and encrypted checkpoint state", () => {
     expect(f.vault.documentChunks).toHaveBeenCalledWith("attachment:a1", 0, 6);
     expect(f.last().citations[0].attachmentId).toBe("a1");
   });
+  it("extracts a permitted unindexed attachment on demand and explains when it still cannot be read", async () => {
+    const f = fixture();
+    f.vault.put("attachments", "a2", { id: "a2", name: "invite.pdf", messageId: "m1", accountId: "allowed", status: "pending" });
+    f.vault.put("attachments", "a3", { id: "a3", name: "scan.png", messageId: "m1", accountId: "allowed", status: "pending" });
+    const prepareAttachment = vi.fn(async (id: string) => {
+      const current = f.vault.get("attachments", id) as Record<string, unknown>;
+      f.vault.put("attachments", id, id === "a2" ? { ...current, status: "indexed" } : { ...current, status: "blocked", reason: "No OCR model." });
+    });
+    (f.hooks as unknown as { prepareAttachment: typeof prepareAttachment }).prepareAttachment = prepareAttachment;
+    f.hooks.generate.mockImplementation(async request => {
+      expect(await call(request.tools, "read_attachment", { attachmentId: "a2" })).toMatchObject({ excerpts: [{ id: "chunk" }] });
+      expect(JSON.stringify(await call(request.tools, "read_attachment", { attachmentId: "a3" }))).toContain("blocked; No OCR model.");
+      return { answer: "Invitation details", citationIds: ["chunk"] };
+    });
+    await f.send();
+    expect(prepareAttachment.mock.calls.map(call => call[0])).toEqual(["a2", "a3"]);
+  });
   it("restores interrupted turns as cancelled and never retries interrupted actions", () => {
     const f = fixture();
     f.vault.put("checkpoints", "chat:v1", { conversations: [{ id: "c", title: "Chat", updatedAt: "", turns: [{

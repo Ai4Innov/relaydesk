@@ -7,6 +7,7 @@ import { ArchiveAiReview, REVIEW_BATCH_SIZE, REVIEW_CHUNK_SIZE } from "../src/ma
 import { ProductivityService } from "../src/main/productivity";
 import { ArchiveReviewPanel } from "../src/renderer/Productivity";
 import { commandSchema } from "../src/main/ipc/schema";
+import { DEFAULT_PRIORITY_DOMAINS, messagePriority, normalizePriorityDomains } from "../src/shared/priority";
 
 class MemoryVault {
   records = new Map<Collection, Map<string, unknown>>();
@@ -242,16 +243,34 @@ describe("resumable all-local-email review", () => {
     expect(generate.mock.calls[2][1].map(citation => citation.messageId)).toEqual(generate.mock.calls[1][1].map(citation => citation.messageId));
   });
 
-  it("rejects incomplete acknowledgement, unsupported quotes and invented deadlines atomically", async () => {
-    for (const mode of ["acknowledgement", "quote", "deadline"]) {
+  it("drops unquoted suggestions and unsupported deadlines without discarding the reviewed batch", async () => {
+    for (const mode of ["quote", "deadline"] as const) {
+      const vault = seed();
+      const generated = hooks();
+      generated.generate.mockImplementation(async (_prompt, citations) => {
+        const good = response(citations, true);
+        const output = JSON.parse(good.answer);
+        if (mode === "quote") output.suggestions[0].quote = "Not in this message";
+        if (mode === "deadline") { output.suggestions[0].dueAt = "2026-09-30"; output.suggestions[0].dueQuote = "2026-09-30"; }
+        return { ...good, answer: `Here is the review:\n${JSON.stringify(output)}` };
+      });
+      const review = new ArchiveAiReview(vault, generated);
+      review.start(1); await review.settled();
+      expect(review.coverage()).toMatchObject({ reviewed: 1, remaining: 0, failures: 0 });
+      const actions = vault.all<ActionItem>("actions");
+      if (mode === "quote") expect(actions).toEqual([]);
+      else expect(actions).toEqual([expect.objectContaining({ dueAt: undefined })]);
+    }
+  });
+
+  it("rejects output that acknowledges no segment", async () => {
+    for (const mode of ["acknowledgement"]) {
       const vault = seed();
       const generated = hooks();
       generated.generate.mockImplementation(async (_prompt, citations) => {
         const good = response(citations, true);
         const output = JSON.parse(good.answer);
         if (mode === "acknowledgement") output.reviewedCitationIds = [];
-        if (mode === "quote") output.suggestions[0].quote = "Not in this message";
-        if (mode === "deadline") { output.suggestions[0].dueAt = "2026-09-30"; output.suggestions[0].dueQuote = "2026-09-30"; }
         return { ...good, answer: JSON.stringify(output) };
       });
       const review = new ArchiveAiReview(vault, generated);
@@ -385,5 +404,84 @@ describe("resumable all-local-email review", () => {
     expect(generated.generate).toHaveBeenCalledTimes(1);
     expect(review.coverage()).toMatchObject({ status: "paused", reviewed: 4, remaining: 4, failedMessages: 0 });
     expect(review.coverage().detail).toContain("Automation is paused");
+  });
+});
+
+describe("professional priority (Finco first, then AI4Innov)", () => {
+  const recent = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
+  const finco: Account = { ...account, id: "finco", email: "gilles@finco.digital" };
+  const ai4: Account = { ...account, id: "ai4", email: "gilles@ai4innov.tech" };
+  const personal: Account = { ...account, id: "personal", email: "me@gmail.com" };
+  function prioritySeed(messages: Message[]): MemoryVault {
+    const vault = seed(messages);
+    for (const item of [finco, ai4, personal]) {
+      vault.put("accounts", item.id, item);
+      vault.put("sources", `${item.id}:mail`, { ...source, id: `${item.id}:mail`, accountId: item.id });
+    }
+    return vault;
+  }
+  const at = (id: string, owner: Account, days: number, overrides: Partial<Message> = {}) =>
+    message(0, { id, accountId: owner.id, sourceId: `${owner.id}:mail`, recipients: [owner.email], receivedAt: recent(days), historical: false, ...overrides });
+
+  it("ranks configured organizations, then professional, personal and bulk mail", () => {
+    const domains = DEFAULT_PRIORITY_DOMAINS;
+    const base = { recipients: [], body: "Can you confirm the offer?" };
+    expect(messagePriority({ ...base, sender: "CERGI <m@cergi.bj>" }, "gilles@finco.digital", domains)).toMatchObject({ tier: "priority", rank: 0 });
+    expect(messagePriority({ ...base, sender: "x@partner.org" }, "gilles@ai4innov.tech", domains)).toMatchObject({ tier: "priority", rank: 1 });
+    expect(messagePriority({ ...base, sender: "Kezia <k@finco.digital>" }, "me@gmail.com", domains)).toMatchObject({ tier: "priority", rank: 0 });
+    expect(messagePriority({ ...base, sender: "a@client.com" }, "me@gmail.com", domains).tier).toBe("professional");
+    expect(messagePriority({ ...base, sender: "friend@yahoo.fr" }, "me@gmail.com", domains).tier).toBe("personal");
+    expect(messagePriority({ ...base, sender: "Medium <noreply@medium.com>" }, "me@gmail.com", domains).tier).toBe("bulk");
+    expect(messagePriority({ ...base, sender: "a@shop.com", body: "Big sale today! Unsubscribe here." }, "gilles@finco.digital", domains).tier).toBe("bulk");
+    const score = (sender: string, email: string) => messagePriority({ ...base, sender }, email, domains).boost;
+    expect(score("a@x.bj", "gilles@finco.digital")).toBeGreaterThan(score("a@x.bj", "gilles@ai4innov.tech"));
+    expect(score("a@x.bj", "gilles@ai4innov.tech")).toBeGreaterThan(score("a@client.com", "me@gmail.com"));
+    expect(score("a@client.com", "me@gmail.com")).toBeGreaterThan(score("f@gmail.com", "me@gmail.com"));
+    expect(score("f@gmail.com", "me@gmail.com")).toBeGreaterThan(score("noreply@x.com", "me@gmail.com"));
+    expect(normalizePriorityDomains([" @Finco.Digital ", "https://ai4innov.tech/x", "bad", "finco.digital"])).toEqual(["finco.digital", "ai4innov.tech"]);
+  });
+
+  it("automatically reviews recent mail priority-first, skipping newsletters and old mail", async () => {
+    const vault = prioritySeed([
+      at("personal-new", personal, 0.1, { sender: "friend@gmail.com" }),
+      at("ai4-mid", ai4, 1, { sender: "partner@lab.org" }),
+      at("finco-old", finco, 3, { sender: "m@cergi.bj" }),
+      at("newsletter", finco, 0.05, { sender: "Substack <noreply@substack.com>" }),
+      at("archive", finco, 60, { sender: "m@cergi.bj" })
+    ]);
+    const generated = hooks();
+    const review = new ArchiveAiReview(vault, generated);
+    const since = recent(14);
+    expect(review.recentPending(since)).toBe(3);
+    review.start(1, { since }); await review.settled();
+    const [prompt, citations] = generated.generate.mock.calls[0];
+    expect(citations.map(citation => citation.messageId)).toEqual(["finco-old", "ai4-mid", "personal-new"]);
+    expect(citations[0].location).toContain("context=finco.digital (priority 1)");
+    expect(prompt).toContain("Professional work comes first");
+    expect(review.recentPending(since)).toBe(0);
+    expect(review.coverage().detail).toMatch(/automatic/i);
+  });
+
+  it("hides keyword-rule tasks for newsletters and AI-reviewed mail and ranks Finco work first", async () => {
+    const vault = prioritySeed([
+      at("finco-ask", finco, 1, { sender: "m@cergi.bj" }),
+      at("personal-ask", personal, 1, { sender: "friend@gmail.com" }),
+      at("promo", personal, 1, { sender: "Deals <news@shop.com>", body: "Can you believe it? Sale today. Unsubscribe" })
+    ]);
+    const rule = (id: string, owner: Account, priority: ActionItem["priority"]): ActionItem => ({
+      id: `action:${id}`, messageId: id, accountId: owner.id, title: id, reason: "Local rule", priority, status: "open", confidence: 0.5,
+      citations: [{ id, messageId: id, title: id, excerpt: "Please review" }]
+    });
+    for (const action of [rule("finco-ask", finco, "normal"), rule("personal-ask", personal, "urgent"), rule("promo", personal, "urgent")])
+      vault.put("actions", action.id, action);
+    const service = new ProductivityService(vault as never, { ...hooks(), schedule: vi.fn() });
+    const tasks = service.snapshot(snapshot(vault)).tasks;
+    expect(tasks.map(task => task.sourceMessageId)).toEqual(["finco-ask", "personal-ask"]);
+    expect(tasks[0]).toMatchObject({ context: "finco.digital (priority 1)", contextTier: "priority", focusRank: 1 });
+
+    const generated = hooks();
+    const review = new ArchiveAiReview(vault, generated);
+    review.start(1); await review.settled();
+    expect(service.snapshot(snapshot(vault)).tasks).toEqual([]);
   });
 });

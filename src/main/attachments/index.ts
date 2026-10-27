@@ -22,6 +22,8 @@ interface Options {
   thresholdMb: () => number;
   /** Explicit override for tests/custom deployment; production copies the CJS asset beside main.js. */
   workerPath?: string;
+  /** Installs local OCR models on first need. Failure is non-fatal: the worker then reports them as missing. */
+  prepareModels?(): Promise<void>;
 }
 interface Extraction {
   segments: { text: string; location: string }[];
@@ -147,7 +149,9 @@ export class AttachmentProcessor {
     }
   }
 
-  private extract(bytes: Buffer, attachment: Attachment, approved: boolean, signal: AbortSignal): Promise<Extraction> {
+  private async extract(bytes: Buffer, attachment: Attachment, approved: boolean, signal: AbortSignal): Promise<Extraction> {
+    if (approved && ["pdf", "image", "zip"].includes(attachmentFormat(attachment) ?? ""))
+      await this.options.prepareModels?.().catch(error => console.warn("[attachments] OCR model installation failed:", error));
     return extractIsolated(bytes, { name: attachment.name, mimeType: attachment.mimeType },
       { approved, modelDirectory: this.options.modelDirectory, workerPath: this.options.workerPath }, signal);
   }

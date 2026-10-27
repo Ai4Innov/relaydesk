@@ -268,7 +268,7 @@ function modelConfig() {
     const manifest = JSON.parse(fs.readFileSync(path.join(workerData.modelDirectory, "models.json"), "utf8"));
     if (manifest.version !== 1) throw new Error();
     return manifest;
-  } catch { throw new Failure("blocked", "Local OCR/transcription models are not configured. Install reviewed models and their SHA-256 manifest; no model is downloaded automatically."); }
+  } catch { throw new Failure("blocked", "Local OCR/transcription models are not configured. Relay Desk installs its pinned OCR models automatically when online; retry later or install reviewed models with a SHA-256 manifest."); }
 }
 async function checkedModel(config) {
   if (!config || !/^[a-zA-Z0-9_.-]+$/.test(config.file) || !/^[a-f0-9]{64}$/i.test(config.sha256))
@@ -290,10 +290,16 @@ async function checkedModel(config) {
 async function ocr(bytes) {
   if (!workerData.approved) throw new Failure("awaiting-approval", "Scanned pages require explicit approval before local OCR.");
   const config = modelConfig().ocr;
-  await checkedModel(config);
-  const language = config.language ?? "eng";
-  if (!/^[a-z]{3}$/.test(language) || config.file !== `${language}.traineddata`)
-    throw new Failure("blocked", "OCR needs an uncompressed local language.traineddata file matching the manifest.");
+  // Either one { language, file, sha256 } entry or { languages: [...] } for multilingual OCR.
+  const entries = Array.isArray(config?.languages) ? config.languages : [config];
+  if (!entries.length || entries.length > 8) throw new Failure("blocked", "OCR needs between one and eight configured languages.");
+  for (const entry of entries) {
+    await checkedModel(entry);
+    const code = entry.language ?? "eng";
+    if (!/^[a-z]{3}(?:_[a-z]{3,4})?$/.test(code) || entry.file !== `${code}.traineddata`)
+      throw new Failure("blocked", "OCR needs an uncompressed local language.traineddata file matching the manifest.");
+  }
+  const language = entries.map(entry => entry.language ?? "eng").join("+");
   const { createWorker } = require("tesseract.js");
   const worker = await createWorker(language, 1, {
     langPath: workerData.modelDirectory, gzip: false, cacheMethod: "none",

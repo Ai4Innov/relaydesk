@@ -40,6 +40,12 @@ flowchart TB
 
 Each checklist step ticks itself off when the app detects it is done. Thanks to **full access by default**, you never have to switch on folders, calendars or AI one account at a time.
 
+### Staying on track automatically
+
+- **Tasks and focus update themselves.** While background AI is on, Relay Desk reviews new mail from the last 14 days every few minutes (pausing while you chat) and refreshes the focus report when your top tasks change. Turn it off in **Settings → Assistant → Keep tasks and focus updated automatically**.
+- **Work comes first.** Mail involving your **priority organizations** (Settings → Assistant, in order, e.g. `finco.digital, ai4innov.tech`) ranks above other professional mail, then personal mail. Newsletters and notifications never become tasks on their own.
+- **Calendar events for browser-connected accounts** are saved to your **Relay Desk calendar** and shown in the agenda. Use **Add to Google Calendar** to open a prefilled Google Calendar event and save it there with one click.
+
 ## Quick start (3 steps)
 
 You need [Node.js 24](https://nodejs.org/) (`^24.13.0`), Git, and **one** AI provider. The commands below use GitHub Copilot; [Codex and Claude](#ai-providers) work too.

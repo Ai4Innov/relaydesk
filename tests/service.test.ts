@@ -353,10 +353,27 @@ describe("RelayService safety integration (in-memory storage and offline provide
     expect(vault.get<Source>("sources", "new-source")?.selected).toBe(false);
     expect(vault.all<Job>("jobs")[0].status).toBe("done");
   });
-  it("never routes browser accounts through API synchronization or calendar proposals", async () => {
+  it("never routes browser accounts through API synchronization; calendar proposals become local Relay Desk events", async () => {
     vault.put("accounts", account.id, { ...account, connection: "browser" });
     await expect(service.command({ type: "sync", accountId: account.id })).rejects.toThrow("Browser sources");
-    await expect(service.command({ type: "calendar.propose", change })).rejects.toThrow("read-only");
+    const saved = await service.command({ type: "calendar.propose", change });
+    expect(saved.eventId).toMatch(/^local:/);
+    expect(saved.message).toContain("Relay Desk calendar");
+    const event = vault.get<CalendarEvent>("events", saved.eventId!)!;
+    expect(event).toMatchObject({ local: true, accountId: account.id, sourceId: "calendar", title: "Review", start: change.start, end: change.end });
+    const url = new URL(event.url);
+    expect(url.origin + url.pathname).toBe("https://calendar.google.com/calendar/render");
+    expect(Object.fromEntries(url.searchParams)).toMatchObject({ action: "TEMPLATE", text: "Review", dates: "20261001T090000Z/20261001T100000Z", ctz: "Europe/Paris", authuser: account.email });
+    expect(service.snapshot().events.map(item => item.id)).toContain(event.id);
+
+    await service.command({ type: "calendar.propose", change: { ...change, eventId: event.id, expectedRevision: event.revision, title: "Review (moved)" } });
+    expect(vault.get<CalendarEvent>("events", event.id)).toMatchObject({ title: "Review (moved)", local: true });
+    vault.put("events", "google-event", { ...event, id: "google-event", local: undefined });
+    await expect(service.command({ type: "calendar.propose", change: { ...change, eventId: "google-event" } })).rejects.toThrow("only be changed in Google Calendar");
+
+    await service.command({ type: "calendar.openInGoogle", eventId: event.id });
+    expect(host.openExternal).toHaveBeenLastCalledWith(vault.get<CalendarEvent>("events", event.id)!.url);
+    await expect(service.command({ type: "calendar.openInGoogle", eventId: "google-event" })).rejects.toThrow("Relay Desk calendar events");
     expect(service.connectors.sync).not.toHaveBeenCalled();
     expect(service.connectors.writeEvent).not.toHaveBeenCalled();
   });

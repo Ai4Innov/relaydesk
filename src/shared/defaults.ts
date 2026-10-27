@@ -1,4 +1,5 @@
 import type { Settings } from "./contracts";
+import { DEFAULT_PRIORITY_DOMAINS } from "./priority";
 export const defaultSettings: Settings = {
   model: "",
   aiProvider: "copilot",
@@ -30,5 +31,7 @@ export const defaultSettings: Settings = {
   assistantShell: "auto",
   assistantWeb: "auto",
   fullAccessByDefault: true,
-  autoApprove: true
+  autoApprove: true,
+  priorityDomains: [...DEFAULT_PRIORITY_DOMAINS],
+  autoFocus: true
 };

@@ -48,7 +48,9 @@ const settingsPatch = z.object({
   assistantShell: z.enum(["auto", "ask", "off"]).optional(),
   assistantWeb: z.enum(["auto", "ask", "off"]).optional(),
   fullAccessByDefault: z.boolean().optional(),
-  autoApprove: z.boolean().optional()
+  autoApprove: z.boolean().optional(),
+  priorityDomains: z.array(z.string().trim().toLowerCase().regex(/^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/, "Use mail domains such as finco.digital.")).max(20).optional(),
+  autoFocus: z.boolean().optional()
 }).strict();
 const relayUrl = z.string().trim().min(1).max(2000).refine(value => {
   try {
@@ -126,6 +128,7 @@ export const commandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("attachment.save"), attachmentId: id }).strict(),
   z.object({ type: z.literal("calendar.propose"), change: eventChange }).strict(),
   z.object({ type: z.literal("calendar.approve"), approvalId: id, hash: z.string().length(64) }).strict(),
+  z.object({ type: z.literal("calendar.openInGoogle"), eventId: id }).strict(),
   z.object({ type: z.literal("open.message"), messageId: id }).strict(),
   z.object({ type: z.literal("message.load"), messageId: id, refresh: z.boolean().optional() }).strict(),
 z.object({ type: z.literal("message.html"), messageId: id }).strict(),

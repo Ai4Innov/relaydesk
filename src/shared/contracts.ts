@@ -157,6 +157,8 @@ export interface CalendarEvent {
   recurring?: boolean;
   writable?: boolean;
   reminderMinutes?: number;
+  /** Saved only in Relay Desk (browser-connected calendars cannot be written); `url` pre-fills Google Calendar. */
+  local?: boolean;
 }
 export interface EventChange {
   accountId: string;
@@ -263,6 +265,10 @@ export interface Settings {
   fullAccessByDefault: boolean;
   /** Activity approvals happen automatically: attachment downloads/processing and calendar changes without attendees. */
   autoApprove: boolean;
+  /** Organization mail domains ranked first in tasks, focus and AI review, highest priority first. */
+  priorityDomains: string[];
+  /** Keep tasks and the focus report updated from new mail in the background (uses the AI budget). */
+  autoFocus: boolean;
   /** One-time settings migrations already applied (internal). */
   toolAccessRevision?: number;
 }
@@ -382,6 +388,7 @@ export type Command =
   | { type: "attachment.save"; attachmentId: string }
   | { type: "calendar.propose"; change: EventChange }
   | { type: "calendar.approve"; approvalId: string; hash: string }
+  | { type: "calendar.openInGoogle"; eventId: string }
   | { type: "open.message"; messageId: string }
   | { type: "message.load"; messageId: string; refresh?: boolean }
   | { type: "message.html"; messageId: string }

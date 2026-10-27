@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
-import type { Account, ActionItem, Attachment, CalendarEvent, Citation, EventChange, Message, Snapshot, Source } from "../shared/contracts";
+import type { Account, ActionItem, Attachment, CalendarEvent, Citation, EventChange, Message, Settings, Snapshot, Source } from "../shared/contracts";
+import { defaultSettings } from "../shared/defaults";
+import { isBulkMessage, messagePriority, normalizePriorityDomains, type MessagePriority } from "../shared/priority";
 import { mailOriginAllowed } from "../shared/mail-transport";
 import {
   DEFAULT_TASK_REMINDER_MINUTES,
@@ -136,7 +138,38 @@ export class ProductivityService {
       return message && mailOriginAllowed(this.vault, message) ? message : undefined;
     });
     const visible = { ...source, messages };
-    return { ...visible, actions: source.actions.filter(action => this.review.actionVisible(action) && this.actionVisible(action, visible)) };
+    const kept = this.userTouchedActions();
+    return { ...visible, actions: source.actions.filter(action => this.review.actionVisible(action) && !this.superseded(action, kept) && this.actionVisible(action, visible)) };
+  }
+
+  /** Action ids whose task the user edited, scheduled or moved out of "open"; those are never hidden. */
+  private userTouchedActions(): Set<string> {
+    return new Set(this.vault.all<StoredTaskRecord>("tasks")
+      .filter(record => record.sourceActionId && (record.status !== "open" || record.schedule || Object.values(record.custom ?? {}).some(Boolean)))
+      .map(record => record.sourceActionId!));
+  }
+
+  /**
+   * Keyword-rule suggestions ("action:<message>") are a fallback: they are hidden for newsletters/notifications
+   * and once the AI review has read the message (it keeps the real tasks and drops the noise).
+   */
+  private superseded(action: ActionItem, kept: Set<string>): boolean {
+    if (!action.id.startsWith("action:") || kept.has(action.id)) return false;
+    const message = this.storedMessage(action.messageId);
+    return !!message && (isBulkMessage(message) || this.review.messageReviewed(message));
+  }
+
+  private priorityContext(): { domains: string[]; emails: Map<string, string> } {
+    const settings: Settings = { ...defaultSettings, ...this.vault.get<Partial<Settings>>("settings", "preferences") };
+    return {
+      domains: normalizePriorityDomains(settings.priorityDomains),
+      emails: new Map(this.vault.all<Account>("accounts").map(account => [account.id, account.email]))
+    };
+  }
+
+  private taskPriority(task: TaskItem, context: { domains: string[]; emails: Map<string, string> }): MessagePriority | undefined {
+    const message = task.sourceMessageId ? this.storedMessage(task.sourceMessageId) : undefined;
+    return message ? messagePriority(message, context.emails.get(message.accountId), context.domains) : undefined;
   }
 
   snapshot(source: Snapshot): { tasks: TaskItem[]; focusReport?: FocusReport; aiReview: AiReviewCoverage; actions: ActionItem[] } {
@@ -486,8 +519,17 @@ export class ProductivityService {
   }
 
   private rankTasks(tasks: TaskItem[]): TaskItem[] {
+    const context = this.priorityContext();
+    const scores = new Map<TaskItem, number>();
+    tasks = tasks.map(task => {
+      const priority = this.taskPriority(task, context);
+      const next = priority ? { ...task, context: priority.label, contextTier: priority.tier } : task;
+      // Manual tasks are user-confirmed work, ranked like other professional items.
+      scores.set(next, this.focusScore(next) + (priority?.boost ?? (task.origin === "manual" ? 80 : 0)));
+      return next;
+    });
     const ranked = [...tasks].sort((left, right) => {
-      const diff = this.focusScore(right) - this.focusScore(left);
+      const diff = scores.get(right)! - scores.get(left)!;
       if (diff) return diff;
       const dueLeft = left.dueAt ? Date.parse(dueAtDate.test(left.dueAt) ? `${left.dueAt}T12:00:00` : left.dueAt) : Number.POSITIVE_INFINITY;
       const dueRight = right.dueAt ? Date.parse(dueAtDate.test(right.dueAt) ? `${right.dueAt}T12:00:00` : right.dueAt) : Number.POSITIVE_INFINITY;
@@ -825,8 +867,9 @@ export class ProductivityService {
 
   private reportPrompt(userPrompt: string | undefined, scope: ReportPromptScope, citations: Citation[]): string {
     const taskLines = scope.tasks.slice(0, 6).map(task =>
-      `- ${task.title} | priority=${task.priority} | status=${task.status}${task.dueAt ? ` | due=${task.dueAt}` : ""}${task.sourceReason ? ` | why=${task.sourceReason}` : ""}`
+      `- ${task.title} | priority=${task.priority} | status=${task.status}${task.context ? ` | for=${task.context}` : ""}${task.dueAt ? ` | due=${task.dueAt}` : ""}${task.sourceReason ? ` | why=${task.sourceReason}` : ""}`
     );
+    const domains = this.priorityContext().domains;
     return [
       "Write a concise focus report using only the supplied citations.",
       "Ground every claim in the supplied evidence. Do not invent dates, senders, or deadlines.",
@@ -834,6 +877,7 @@ export class ProductivityService {
       "Do not mention sources that are not cited.",
       "Put the readable narrative in the answer field and return supplied citation IDs using the required response format.",
       "If useful, organize the answer with short headings such as: Act now, Next 72h, Waiting, Uncertainty.",
+      `Professional work comes first${domains.length ? `, in this organization order: ${domains.map((domain, index) => `${index + 1}. ${domain}`).join(", ")}, then other professional mail` : ""}. Mention personal items only when time-critical; newsletters and notifications are never focus items.`,
       `User emphasis: ${trimText(userPrompt, 2_000) || "Summarize what deserves focus next, why it matters, and what can safely wait."}`,
       `Metrics: total=${scope.metrics.totalTasks}, open=${scope.metrics.openTasks}, inProgress=${scope.metrics.inProgressTasks}, waiting=${scope.metrics.waitingTasks}, overdue=${scope.metrics.overdueTasks}, dueSoon=${scope.metrics.dueSoonTasks}, urgent=${scope.metrics.urgentTasks}, workload=${scope.metrics.workloadLabel}, partialBrowser=${scope.metrics.partialBrowserTasks}, staleBrowser=${scope.metrics.staleBrowserTasks}.`,
       "Top current tasks:",

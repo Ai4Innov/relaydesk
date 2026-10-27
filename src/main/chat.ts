@@ -121,6 +121,8 @@ interface Hooks {
   generate(request: ChatAgentRequest): Promise<AgentResponse>;
   execute(command: ProposedCommand, beforeWrite?: () => void): Promise<CommandResult>;
   refreshMail?(request: MailFreshnessRequest): Promise<MailFreshnessResult>;
+  /** Downloads/extracts a not-yet-indexed attachment on demand, under the normal attachment policy. */
+  prepareAttachment?(attachmentId: string): Promise<void>;
   workspaceDirectory?(): string;
   knowledge?: Pick<KnowledgeLibrary, "list" | "search" | "read">;
   openPath?(path: string, reveal: boolean): Promise<void>;
@@ -784,13 +786,24 @@ export class ChatService {
             : { limitation: "Locally stored full message body, paginated. Capture time does not prove current thread freshness or complete mailbox coverage." }),
           nextOffset: args.offset + 10000 < message.body.length ? args.offset + 10000 : undefined };
       }),
-      tool("read_attachment", "Reading indexed attachment excerpts", z.object({
+      tool("read_attachment", "Reading attachment text (downloading and extracting it first if needed)", z.object({
         attachmentId: idSchema, offset: z.number().int().min(0).max(100000).default(0)
-      }).strict(), args => {
-        const attachment = this.vault.get<Attachment>("attachments", args.attachmentId);
-        if (!attachment || !["indexed", "partial"].includes(attachment.status)) throw new Error("Attachment not indexed.");
+      }).strict(), async args => {
+        const readable = (item?: Attachment) => !!item && ["indexed", "partial"].includes(item.status);
+        let attachment = this.vault.get<Attachment>("attachments", args.attachmentId);
+        if (!attachment) throw new Error("Attachment not found.");
         const message = this.message(attachment.messageId, turn);
         if (attachment.accountId !== message.accountId) throw new Error("Attachment scope mismatch.");
+        if (!readable(attachment) && this.hooks.prepareAttachment) {
+          turn.progress = `Downloading and reading ${attachment.name}`; this.persist();
+          try { await this.hooks.prepareAttachment(attachment.id); } catch { /* the current status below explains the outcome */ }
+          this.guard(turn);
+          attachment = this.vault.get<Attachment>("attachments", args.attachmentId);
+          if (!attachment) throw new Error("Attachment not found.");
+        }
+        if (!readable(attachment))
+          throw new Error(`Attachment text is unavailable (status: ${attachment!.status}${attachment!.reason ? `; ${attachment!.reason}` : ""}).`);
+        attachment = attachment!;
         this.track(turn, "attachments", attachment.id, message.accountId, message.sourceId);
         const chunks = this.vault.documentChunks(`attachment:${attachment.id}`, args.offset, 6);
         const excerpts = chunks.map(chunk => ({ id: chunk.id, messageId: message.id, attachmentId: attachment.id,
@@ -1104,12 +1117,14 @@ export class ChatService {
       const change = command.type === "calendar.approve" ? this.vault.get<Approval>("approvals", command.approvalId)!.change : command.change;
       const account = this.vault.get<Account>("accounts", change.accountId);
       const source = this.vault.get<Source>("sources", change.sourceId);
-      if (!account || account.demo || account.connection === "browser" || !source || source.kind !== "calendar" ||
-          !this.permitted(account.id, source.id)) throw new Error("Choose a permitted writable API calendar.");
+      // Browser-connected calendars accept new events into Relay Desk's own calendar (no provider write).
+      if (!account || account.demo || (account.connection === "browser" && command.type === "calendar.approve") || !source || source.kind !== "calendar" ||
+          !this.permitted(account.id, source.id)) throw new Error("Choose a permitted calendar.");
       this.track(turn, "sources", source.id, account.id, source.id);
       if (change.eventId) {
         const event = this.vault.get<CalendarEvent>("events", change.eventId);
         if (!event || event.accountId !== account.id || event.sourceId !== source.id || event.recurring || event.writable === false ||
+            (account.connection === "browser" && !event.local) ||
             change.expectedRevision !== event.revision) throw new Error("Calendar event is read-only or changed. Read its current revision first.");
         this.track(turn, "events", event.id, account.id, source.id);
       }
@@ -1205,7 +1220,10 @@ export class ChatService {
     const guards = this.validateAction(command, turn);
     const review = this.review(command, turn);
     const autoWrite = command.type === "calendar.propose" && this.hooks.settings().autoApprove && !command.change.attendees.some(attendee => attendee.trim());
-    const description = autoWrite ? "Writes exactly this calendar change when you confirm. No attendees are notified, so it is approved automatically (Activity setting)." :
+    const localCalendar = (command.type === "calendar.propose" || command.type === "task.schedule")
+      && this.vault.get<Account>("accounts", command.change.accountId)?.connection === "browser";
+    const description = localCalendar ? "Adds this event to your Relay Desk calendar for this account. Google Calendar is not changed and nobody is notified; the event gets an Add to Google Calendar button." :
+      autoWrite ? "Writes exactly this calendar change when you confirm. No attendees are notified, so it is approved automatically (Activity setting)." :
       command.type === "calendar.propose" ? "Creates a separate calendar approval, not a provider write. Afterwards ask chat to prepare its exact write preview, or review it in Calendar." :
       command.type === "draft.generate" ? "Generates a local reply draft using the selected AI provider. Afterwards ask chat for an exact native-save preview, or review it in Drafts. Never sends mail." :
       command.type === "review.start" ? "Starts a bounded full-archive review using your AI budget. Pause or cancel it in AI review." :

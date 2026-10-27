@@ -391,6 +391,7 @@ export function Productivity({ data, busy, run }: ProductivityProps) {
                 <Badge tone={task.priority === "urgent" ? "rose" : task.priority === "high" ? "amber" : "teal"}>{task.priority}</Badge>
                 <Badge>{task.status.replace("_", " ")}</Badge>
                 {task.origin === "manual" ? <Badge>manual</Badge> : <Badge>email-backed</Badge>}
+                {task.context && <Badge tone={task.contextTier === "priority" ? "teal" : undefined}>{task.context}</Badge>}
                 {task.schedule?.state === "scheduled" && <Badge tone="teal">scheduled</Badge>}
                 {task.schedule?.state === "out_of_date" && <Badge tone="amber">calendar out of date</Badge>}
                 {task.schedule?.state === "uncertain" && <Badge tone="rose">calendar uncertain</Badge>}

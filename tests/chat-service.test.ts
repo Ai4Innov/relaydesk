@@ -209,7 +209,7 @@ describe("chat service wiring and AI lifecycle", () => {
     expect(cancel).not.toHaveBeenCalled();
     expect(service.copilot.stop).not.toHaveBeenCalled();
   });
-  it("does not cancel a concurrent non-chat AI request when a chat is refused by the busy gate", async () => {
+  it("does not cancel a concurrent non-chat AI request when a chat waiting for the busy gate is cancelled", async () => {
     const { service } = fixture();
     let finish!: () => void;
     vi.mocked(service.copilot.generate).mockImplementation(() => new Promise(resolve => {
@@ -217,8 +217,9 @@ describe("chat service wiring and AI lifecycle", () => {
     }));
     const draft = service.command({ type: "draft.generate", messageId: "m" });
     await vi.waitFor(() => expect(service.copilot.generate).toHaveBeenCalledOnce());
-    await service.command({ type: "chat.send", text: "Help" }); await service.chat.settled();
-    await service.command({ type: "chat.cancel" });
+    await service.command({ type: "chat.send", text: "Help" });
+    await new Promise(resolve => setTimeout(resolve, 300));
+    await service.command({ type: "chat.cancel" }); await service.chat.settled();
     expect(service.copilot.chat).not.toHaveBeenCalled();
     expect(service.copilot.stop).not.toHaveBeenCalled();
     finish(); await draft;

@@ -365,6 +365,7 @@ function AiProviderSection({ data, run, busy }: Props) {
 function Assistant({ data, run, busy }: Props) {
   const update = (patch: Partial<Settings>, message?: string) => void run({ type: "settings.update", patch }, message || "Settings saved.");
   const [limits, setLimits] = useState({ dailyAiLimit: data.settings.dailyAiLimit, attachmentThresholdMb: data.settings.attachmentThresholdMb });
+  const [domains, setDomains] = useState((data.settings.priorityDomains ?? []).join(", "));
   const tools = data.settings.assistantTools;
   const { name } = activeAi(data);
   return <>
@@ -373,6 +374,12 @@ function Assistant({ data, run, busy }: Props) {
       <div className="settings-heading"><div className="setting-icon"><RefreshCw/></div><div><h2>AI usage</h2><p>Background help and local limits apply to every provider.</p></div></div>
       <div className="setting-row compact"><div><strong>Background AI assistance</strong><p>Prioritize new messages and prepare local drafts for AI-enabled mailboxes.</p></div>
         <Toggle label="Background AI assistance" checked={data.settings.backgroundAi} disabled={busy} onChange={backgroundAi => update({ backgroundAi })}/></div>
+      <div className="setting-row compact"><div><strong>Keep tasks and focus updated automatically</strong><p>Every few minutes, new mail from the last 14 days is reviewed for tasks (priority organizations first, newsletters skipped) and the focus report is refreshed when your top tasks change. Pauses while you chat. Uses the daily AI run limit.</p></div>
+        <Toggle label="Keep tasks and focus updated automatically" checked={data.settings.autoFocus} disabled={busy || !data.settings.backgroundAi} onChange={autoFocus => update({ autoFocus })}/></div>
+      <form className="setting-row compact" onSubmit={event => { event.preventDefault(); update({ priorityDomains: domains.split(/[\s,;]+/).map(value => value.trim().toLowerCase().replace(/^@/, "")).filter(Boolean) }, "Priority organizations saved."); }}>
+        <div><strong>Priority organizations</strong><p>Mail domains ranked first in tasks, focus and reviews, most important first. Then other professional mail, then personal mail; newsletters last.</p>
+          <input aria-label="Priority organization domains" value={domains} placeholder="finco.digital, ai4innov.tech" onChange={event => setDomains(event.target.value)}/></div>
+        <button className="secondary small" disabled={busy} type="submit">Save order</button></form>
       <div className="setting-row compact"><div><strong>Full access by default</strong><p>New inboxes, channels and calendars are imported and shared with AI as soon as you connect them, with no per-account opt-in. WhatsApp chats stay opt-in. Commands, web requests, calendar changes and sending always still need you.</p></div>
         <Toggle label="Full access by default" checked={data.settings.fullAccessByDefault} disabled={busy} onChange={fullAccessByDefault => update({ fullAccessByDefault })}/></div>
       <div className="setting-row compact"><div><strong>Ask to download latest mail before answering</strong><p>Before each chat question, ask whether to fetch new messages first. Off: the assistant answers right away from messages already saved, which background refresh keeps current.</p></div>

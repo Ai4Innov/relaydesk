@@ -108,9 +108,13 @@ hardening task. No assurance is made that an arbitrary hostile parser exploit is
 
 ## Offline OCR and transcription setup
 
-No model or executable is downloaded automatically. The caller supplies a dedicated local
-`modelDirectory`. Obtain reviewed, licensed models explicitly, verify published checksums, then
-create `models.json` in that directory:
+The desktop app installs English and French OCR models automatically on first use: pinned
+`tessdata_fast` files (Apache-2.0) are downloaded from a fixed upstream commit, size- and SHA-256-verified,
+and registered in `models.json` under the app's `models` directory. An existing user-configured `ocr` entry is
+never overwritten. Attachments left blocked because OCR was missing are re-queued at startup, and chat can read an
+unindexed attachment on demand. Transcription models and executables are never downloaded automatically. To
+configure them (or your own OCR models), obtain reviewed, licensed models, verify published checksums, then
+edit `models.json`:
 
 ```json
 {

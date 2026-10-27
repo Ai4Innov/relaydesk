@@ -298,7 +298,7 @@ function ArchivePage({ data, run, busy }: Shared) {
 }
 
 function CalendarPage({ data, run, busy }: Shared) {
-  const calendars = data.sources.filter((s) => s.kind === "calendar" && s.selected && data.accounts.some((a) => a.id === s.accountId && a.status === "connected" && a.connection !== "browser"));
+  const calendars = data.sources.filter((s) => s.kind === "calendar" && s.selected && data.accounts.some((a) => a.id === s.accountId && a.status === "connected"));
   const blank = (): EventChange => ({ accountId: calendars[0]?.accountId || "", sourceId: calendars[0]?.id || "", title: "", start: "", end: "", allDay: false, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, attendees: [], location: "", description: "" });
   const [change, setChange] = useState<EventChange>(blank);
   const [editing, setEditing] = useState(false);
