@@ -1530,6 +1530,34 @@
       return result.value;
     }
 
+    // After an install or update, pages opened earlier keep an orphaned content script and
+    // cannot capture. Reload them, but never the tab the user is looking at or a Calendar
+    // editor (unsaved form); those are reloaded once the user switches away.
+    const orphanedTabs = new Set();
+    function safeToReload(tab) {
+      return tab && !tab.active && typeof tab.url === "string" && !/^https:\/\/calendar\.google\.com\/calendar\/.*\/(?:eventedit|r\/eventedit)/.test(tab.url);
+    }
+    async function recoverOrphanedTabs() {
+      let reloaded = 0;
+      for (const tab of await chrome.tabs.query({ url: SUPPORTED_URLS })) {
+        if (!tab || !Number.isInteger(tab.id) || tab.discarded) continue;
+        try { await chrome.tabs.sendMessage(tab.id, { type: "relay-tab", action: "status" }, { frameId: 0 }); continue; }
+        catch { /* no live content script */ }
+        if (safeToReload(tab)) { await chrome.tabs.reload(tab.id); reloaded++; }
+        else orphanedTabs.add(tab.id);
+      }
+      return { reloaded, deferred: orphanedTabs.size };
+    }
+    async function reloadDeferredTabs() {
+      for (const tabId of [...orphanedTabs]) {
+        let tab;
+        try { tab = await chrome.tabs.get(tabId); } catch { orphanedTabs.delete(tabId); continue; }
+        if (!safeToReload(tab)) continue;
+        orphanedTabs.delete(tabId);
+        try { await chrome.tabs.reload(tabId); } catch { /* tab closed */ }
+      }
+    }
+
     async function reconcileOpenTabs() {
       const tabs = await chrome.tabs.query({ url: SUPPORTED_URLS });
       let attempted = 0;
@@ -1943,7 +1971,7 @@
       throw new Error("Unknown browser companion command.");
     }
 
-    return { handle };
+    return { handle, recoverOrphanedTabs, reloadDeferredTabs };
   }
 
   if (typeof module === "object" && module.exports) module.exports = { createBridge, downloadAttachment, validAttachmentIntent };
@@ -1953,5 +1981,10 @@
       bridge.handle(message, sender).then(value => respond({ ok: true, value }), error => respond({ ok: false, error: error.message }));
       return true;
     });
+    root.chrome.runtime.onInstalled?.addListener(details => {
+      if (details.reason === "install" || details.reason === "update")
+        void bridge.recoverOrphanedTabs().catch(() => {});
+    });
+    root.chrome.tabs.onActivated?.addListener(() => { void bridge.reloadDeferredTabs().catch(() => {}); });
   }
 })(globalThis);

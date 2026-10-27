@@ -322,6 +322,27 @@ describe("browser extension privileged worker", () => {
     await expect(handle({ type: "pair", code: "wrong" }, popupSender)).rejects.toThrow("401");
     expect(chrome.state.token).toBe("paired-token");
   });
+  it("reloads only background provider tabs left without a live content script after an update", async () => {
+    const chrome = mockChrome();
+    const tabs = [
+      { id: 1, url: MAIL, active: false },
+      { id: 2, url: MAIL, active: true },
+      { id: 3, url: MAIL, active: false },
+      { id: 4, url: "https://calendar.google.com/calendar/u/0/r/eventedit/abc", active: false },
+    ];
+    const reload = vi.fn(async (_id: number) => undefined);
+    Object.assign(chrome.tabs, { reload, query: vi.fn(async () => tabs), get: vi.fn(async (id: number) => ({ ...tabs.find(tab => tab.id === id)!, active: false })) });
+    chrome.tabs.sendMessage.mockImplementation((async (id: number) => {
+      if (id === 3) return { ok: true, value: {} };
+      throw new Error("No receiver");
+    }) as never);
+    const worker = background.createBridge(chrome, vi.fn()) as unknown as {
+      recoverOrphanedTabs(): Promise<{ reloaded: number; deferred: number }>; reloadDeferredTabs(): Promise<void> };
+    await expect(worker.recoverOrphanedTabs()).resolves.toEqual({ reloaded: 1, deferred: 2 });
+    expect(reload.mock.calls.map(call => call[0])).toEqual([1]);
+    await worker.reloadDeferredTabs();
+    expect(reload.mock.calls.map(call => call[0])).toEqual([1, 2]);
+  });
   it("offers an actionable reload error when the tab has no content script", async () => {
     const { chrome, handle } = setup();
     chrome.tabs.sendMessage.mockRejectedValueOnce(new Error("No receiver"));
