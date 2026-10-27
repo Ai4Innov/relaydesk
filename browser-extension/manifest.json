@@ -23,6 +23,6 @@
     "world": "ISOLATED"
   }],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'none'; connect-src http://127.0.0.1:43891"
+    "extension_pages": "script-src 'self'; object-src 'none'; connect-src 'self' http://127.0.0.1:43891"
   }
 }

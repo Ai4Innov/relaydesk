@@ -707,9 +707,45 @@
       return wakeCheck;
     }
 
+    // Relay Desk writes a per-launch secret into the installed companion folder, so a
+    // companion whose storage was reset (reinstall, moved folder) re-pairs without a code.
+    let autoPairing;
+    let autoPairAttemptAt = 0;
+    function autoPair() {
+      if (autoPairing) return autoPairing;
+      if (Date.now() - autoPairAttemptAt < 15000 || typeof chrome.runtime?.getURL !== "function") return Promise.resolve(undefined);
+      autoPairAttemptAt = Date.now();
+      autoPairing = (async () => {
+        try {
+          const stored = await chrome.storage.local.get(["token", "autoPairOff"]);
+          if (stored.token) return stored.token;
+          if (stored.autoPairOff) return undefined;
+          const file = await fetchRequest(chrome.runtime.getURL("relay-pairing.json"), { cache: "no-store" });
+          if (!file || !file.ok) return undefined;
+          const data = await file.json();
+          if (!data || typeof data.secret !== "string" || !/^[a-f0-9]{64}$/.test(data.secret)) return undefined;
+          const result = await request("/pair", { bootstrap: data.secret }, true);
+          if (!result || typeof result.token !== "string" || !result.token || result.token.length > 4096) return undefined;
+          if ((await chrome.storage.local.get("token")).token) return (await chrome.storage.local.get("token")).token;
+          await chrome.storage.local.set({ token: result.token });
+          grants.clear();
+          calendarJobs.clear();
+          cancelMailJobs();
+          void reconcileOpenTabs().catch(() => {});
+          return result.token;
+        } catch { return undefined; }
+        finally { autoPairing = undefined; }
+      })();
+      return autoPairing;
+    }
+
     chrome.alarms?.onAlarm.addListener(alarm => {
-      if (alarm.name === MAIL_WAKE_ALARM) void checkMailWake(true).catch(() => {});
+      if (alarm.name === MAIL_WAKE_ALARM) {
+        void autoPair();
+        void checkMailWake(true).catch(() => {});
+      }
     });
+    void ready.then(() => autoPair()).catch(() => {});
     if (chrome.alarms) {
       void Promise.resolve(chrome.alarms.create(MAIL_WAKE_ALARM, { periodInMinutes: 0.5 }))
         .then(() => checkMailWake(true)).catch(() => {});
@@ -717,7 +753,8 @@
 
     async function request(path, body, pairing = false) {
       await ready;
-      const { token } = await chrome.storage.local.get("token");
+      let { token } = await chrome.storage.local.get("token");
+      if (!pairing && !token) token = await autoPair();
       if (!pairing && !token) throw new Error("Pair with Relay Desk first: open the desktop Browser settings and enter its pairing code.");
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 10000);
@@ -1828,6 +1865,7 @@
           throw new Error("Relay Desk returned an invalid pairing token.");
         }
         await chrome.storage.local.set({ token: result.token });
+        await chrome.storage.local.remove("autoPairOff");
         grants.clear();
         calendarJobs.clear();
         cancelMailJobs();
@@ -1843,12 +1881,13 @@
         cancelMailJobs();
         blockedTabs.clear();
         for (const [tabId] of expectedTabs) rejectExpectedRegistration(tabId, new Error("Pairing was removed before account discovery completed."));
+        await chrome.storage.local.set({ autoPairOff: true });
         return { paired: false };
       }
       if (message.type === "state") {
         await ready;
         const { token } = await chrome.storage.local.get("token");
-        return { paired: Boolean(token) };
+        return { paired: Boolean(token || await autoPair()) };
       }
       if (message.type === "tab-management") return await tabManagement();
       if (message.type === "cleanup-agent-tabs") {

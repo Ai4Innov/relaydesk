@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
+import { rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { Socket } from "node:net";
 import { z } from "zod";
@@ -27,8 +28,11 @@ interface BridgeOptions {
   changed: () => void;
   refreshSettings?: () => { intervalSeconds: number; paused: boolean; backgroundCapture?: boolean };
   port?: number;
+  /** File inside the installed companion folder. Holding its per-launch secret lets an unpaired companion pair itself. */
+  bootstrapFile?: string;
 }
 const SECRET_ID = "browser-bridge-token";
+const AUTO_PAIR_OFF_ID = "browser-bridge-autopair-off";
 const CLIENT_META_ID = "browser-bridge-clients";
 const MAX_CLIENTS = 8;
 const CLIENT_LIMIT_ERROR = "Browser pairing limit reached (8 clients). Revoke all browser pairings in Relay Desk, then pair the browsers you want to keep.";
@@ -297,6 +301,39 @@ export class BrowserBridge {
     if (!Number.isInteger(this.configuredPort) || this.configuredPort < 0 || this.configuredPort > 65535)
       throw new Error("Invalid browser bridge port.");
     this.origin = `chrome-extension://${options.extensionId}`;
+  }
+
+  private bootstrap?: string;
+  private removeBootstrap(): void {
+    this.bootstrap = undefined;
+    if (this.options.bootstrapFile) try { rmSync(this.options.bootstrapFile, { force: true }); } catch { /* best effort */ }
+  }
+  private writeBootstrap(): void {
+    this.removeBootstrap();
+    if (!this.options.bootstrapFile || this.vault.get<unknown>("secrets", AUTO_PAIR_OFF_ID) === true) return;
+    const secret = randomBytes(32).toString("hex");
+    try {
+      writeFileSync(this.options.bootstrapFile, JSON.stringify({ version: 1, secret, port: this.status().port }), { mode: 0o600 });
+      this.bootstrap = secret;
+    } catch { /* the companion can still pair with a code */ }
+  }
+  private issueToken(request: IncomingMessage, response: ServerResponse, replaceStale: boolean): void {
+    let tokens = this.tokens();
+    if (tokens.length >= MAX_CLIENTS) {
+      if (!replaceStale) throw new HttpError(409, CLIENT_LIMIT_ERROR);
+      const seen = new Map(this.clientMetas().map(client => [client.id, client.lastSeenAt ?? ""]));
+      const stalest = [...tokens].sort((a, b) => (seen.get(clientId(a)) ?? "").localeCompare(seen.get(clientId(b)) ?? ""))[0];
+      tokens = tokens.filter(token => token !== stalest);
+    }
+    const next = randomBytes(32).toString("hex");
+    this.vault.put("secrets", SECRET_ID, { tokens: [...tokens, next], extensionId: this.options.extensionId });
+    this.updateClientMeta(next, current => ({
+      ...current,
+      browser: browserKind(request.headers["user-agent"]),
+      lastSeenAt: new Date().toISOString(),
+    }));
+    this.options.changed();
+    this.reply(response, 200, { token: next });
   }
 
   private refreshSettings(): { intervalSeconds: number; paused: boolean; backgroundCapture: boolean } {
@@ -715,7 +752,7 @@ export class BrowserBridge {
       });
       server.listen(this.configuredPort, "127.0.0.1", () => { this.error = undefined; resolve(); });
     });
-    try { await this.starting; this.options.changed(); }
+    try { await this.starting; this.writeBootstrap(); this.options.changed(); }
     finally { this.starting = undefined; }
   }
   async pair(): Promise<BrowserPairing> {
@@ -726,6 +763,10 @@ export class BrowserBridge {
     const expires = Date.now() + 120_000;
     const code = randomInt(1_000_000).toString().padStart(6, "0");
     this.pendingCode = { code, expires, attempts: 0 };
+    if (this.vault.get<unknown>("secrets", AUTO_PAIR_OFF_ID) === true) {
+      this.vault.delete("secrets", AUTO_PAIR_OFF_ID);
+      this.writeBootstrap();
+    }
     return { code, expiresAt: new Date(expires).toISOString(), port: this.status().port };
   }
   async revoke(): Promise<void> {
@@ -738,6 +779,9 @@ export class BrowserBridge {
     this.refreshRequestedAt = 0;
     this.vault.delete("secrets", SECRET_ID);
     this.vault.delete("secrets", CLIENT_META_ID);
+    // An explicit revoke must not be undone by automatic pairing; a new pairing code re-enables it.
+    if (this.options.bootstrapFile) this.vault.put("secrets", AUTO_PAIR_OFF_ID, true);
+    this.removeBootstrap();
     for (const socket of this.sockets) socket.destroy();
     this.options.changed();
   }
@@ -748,6 +792,7 @@ export class BrowserBridge {
     this.calendarCapabilities.clear();
     this.generation++;
     this.pendingCode = undefined;
+    this.removeBootstrap();
     this.stopping = (async () => {
       if (this.starting) await this.starting.catch(() => undefined);
       const server = this.server;
@@ -882,17 +927,23 @@ export class BrowserBridge {
       this.active++;
       counted = true;
       const pairing = request.url === "/pair";
-      const pending = this.pendingCode;
       let token = "";
+      if (!pairing) token = this.authorize(request);
+      const input = await this.body(request);
+      if (generation !== this.generation || response.destroyed) forbidden();
       if (pairing) {
+        const automatic = z.object({ bootstrap: z.string().regex(/^[a-f0-9]{64}$/) }).strict().safeParse(input);
+        if (automatic.success) {
+          if (!this.bootstrap || !equal(this.bootstrap, automatic.data.bootstrap))
+            throw new HttpError(403, "Automatic pairing is unavailable. Generate a pairing code in Relay Desk and enter it here.");
+          this.issueToken(request, response, true);
+          return;
+        }
+        const pending = this.pendingCode;
         if (!pending) throw new HttpError(403, "No active pairing code. Generate a fresh code in Relay Desk, then enter it here.");
         if (pending.expires <= Date.now()) throw new HttpError(403, "Pairing code expired. Generate a fresh code in Relay Desk and enter it within two minutes.");
         if (pending.attempts >= 5) throw new HttpError(403, "Too many pairing attempts. Generate a fresh code in Relay Desk.");
         pending.attempts++;
-      } else token = this.authorize(request);
-      const input = await this.body(request);
-      if (generation !== this.generation || response.destroyed) forbidden();
-      if (pairing) {
         const parsed = z.object({ code: z.string().regex(/^\d{6}$/) }).strict().safeParse(input);
         if (!pending || pending !== this.pendingCode)
           throw new HttpError(403, "Pairing code was replaced or already used. Generate a fresh code in Relay Desk.");
@@ -900,18 +951,9 @@ export class BrowserBridge {
           throw new HttpError(403, "Pairing code expired. Generate a fresh code in Relay Desk and enter it within two minutes.");
         if (!parsed.success || !equal(pending.code, parsed.data.code))
           throw new HttpError(403, "Pairing code does not match. Enter the latest six-digit code shown in Relay Desk.");
-        const tokens = this.tokens();
-        if (tokens.length >= MAX_CLIENTS) throw new HttpError(409, CLIENT_LIMIT_ERROR);
+        if (this.tokens().length >= MAX_CLIENTS) throw new HttpError(409, CLIENT_LIMIT_ERROR);
         this.pendingCode = undefined;
-        const next = randomBytes(32).toString("hex");
-        this.vault.put("secrets", SECRET_ID, { tokens: [...tokens, next], extensionId: this.options.extensionId });
-        this.updateClientMeta(next, current => ({
-          ...current,
-          browser: browserKind(request.headers["user-agent"]),
-          lastSeenAt: new Date().toISOString(),
-        }));
-        this.options.changed();
-        this.reply(response, 200, { token: next });
+        this.issueToken(request, response, false);
         return;
       }
       this.authorize(request);

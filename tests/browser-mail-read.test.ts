@@ -356,7 +356,7 @@ describe("dedicated full email worker", () => {
     let bridge: any;
     const chrome = {
       runtime: { id: extensionId, getURL: (path: string) => `chrome-extension://${extensionId}/${path}` },
-      storage: { local: { setAccessLevel: async () => {}, get: async () => ({ token: "paired" }), remove: async () => {} } },
+      storage: { local: { setAccessLevel: async () => {}, get: async () => ({ token: "paired" }), remove: async () => {}, set: async () => {} } },
       tabs: {
         onActivated: { addListener: (fn: typeof activate) => { activate = fn; } }, onRemoved: { addListener: () => {} },
         get: vi.fn(async (id: number) => tabs.get(id)),
@@ -449,7 +449,7 @@ describe("dedicated full email worker", () => {
     const response = new Promise<Response>(resolve => { release = resolve; });
     const chrome = {
       runtime: { id: extensionId, getURL: (path: string) => `chrome-extension://${extensionId}/${path}` },
-      storage: { local: { setAccessLevel: async () => {}, get: async () => ({ token: "paired" }), remove: async () => {} } },
+      storage: { local: { setAccessLevel: async () => {}, get: async () => ({ token: "paired" }), remove: async () => {}, set: async () => {} } },
       tabs: { get: async () => ({ id: 10, url: registration.pageUrl, windowId: 5 }),
         create: vi.fn(), query: async () => [] },
     };

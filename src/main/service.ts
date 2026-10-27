@@ -217,6 +217,7 @@ export class RelayService {
         () => this.stopped || this.restoring || this.settings().syncPaused || !this.browser?.status().paired);
       this.browser = new BrowserBridge(vault, {
         extensionId: host.browserExtensionId, changed: host.changed,
+        bootstrapFile: host.browserExtensionDirectory ? join(host.browserExtensionDirectory, "relay-pairing.json") : undefined,
         refreshSettings: () => ({ intervalSeconds: this.settings().refreshIntervalSeconds, paused: this.settings().syncPaused,
           backgroundCapture: this.settings().browserBackgroundCapture }),
         onDiscover: async input => {

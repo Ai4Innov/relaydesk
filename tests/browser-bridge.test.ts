@@ -111,6 +111,34 @@ describe("loopback browser bridge", () => {
       { ...input, meetings: calendar().meetings },
     ]) expect((await h.send("/capture", invalid, token)).status).toBe(400);
   });
+  it("lets an unpaired companion pair itself with the per-launch folder secret until pairings are revoked", async () => {
+    const { mkdtempSync, readFileSync, existsSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const file = join(mkdtempSync(join(tmpdir(), "relay-boot-")), "relay-pairing.json");
+    const vault = new MemoryVault();
+    const bridge = new BrowserBridge(vault, { extensionId, onDiscover: vi.fn(async () => ({ accountId: "a", enabled: false })),
+      onCapture: vi.fn(), changed: vi.fn(), port: 0, bootstrapFile: file });
+    bridges.push(bridge);
+    await bridge.start();
+    const boot = JSON.parse(readFileSync(file, "utf8")) as { secret: string; port: number };
+    expect(boot.port).toBe(bridge.status().port);
+    const send = (input: unknown) => fetch(`http://127.0.0.1:${boot.port}/pair`, {
+      method: "POST", headers: { Origin: origin, "Content-Type": "application/json" }, body: JSON.stringify(input) });
+    expect((await send({ bootstrap: "0".repeat(64) })).status).toBe(403);
+    const response = await send({ bootstrap: boot.secret });
+    expect(response.status).toBe(200);
+    expect(bridge.status().paired).toBe(true);
+    for (let index = 0; index < 9; index++) expect((await send({ bootstrap: boot.secret })).status).toBe(200);
+    expect(bridge.status().clients).toHaveLength(8);
+    await bridge.revoke();
+    expect(existsSync(file)).toBe(false);
+    expect((await send({ bootstrap: boot.secret })).status).toBe(403);
+    await bridge.pair();
+    const renewed = JSON.parse(readFileSync(file, "utf8")) as { secret: string };
+    expect(renewed.secret).not.toBe(boot.secret);
+    expect((await send({ bootstrap: renewed.secret })).status).toBe(200);
+  });
   it("uses the fixed default port and requires a real pinned Chrome extension ID", () => {
     const options = { extensionId, changed: vi.fn(), onDiscover: vi.fn(), onCapture: vi.fn() };
     expect(new BrowserBridge(new MemoryVault(), options).status()).toEqual({

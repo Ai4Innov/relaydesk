@@ -39,15 +39,15 @@ const ID = "haiiamalgpmpjeaaldpdopnaogallplh";
 const registration: BrowserRegistration = { accountEmail: "owner@example.org", accountName: "Owner", pageUrl: MAIL, kind: "mail" };
 
 function mockChrome(initialToken: string | undefined = "paired-token") {
-  const state: { token?: string } = { token: initialToken };
+  const state: { token?: string; [key: string]: unknown } = { token: initialToken };
   return {
     state,
     runtime: { id: ID, getURL: (path: string) => `chrome-extension://${ID}/${path}` },
     storage: { local: {
       setAccessLevel: vi.fn(async (_options: { accessLevel: string }) => undefined),
-      get: vi.fn(async (_key: string) => ({ ...state })),
-      set: vi.fn(async (value: { token: string }) => { state.token = value.token; }),
-      remove: vi.fn(async (_key: string) => { delete state.token; })
+      get: vi.fn(async (_key: string | string[]) => ({ ...state })),
+      set: vi.fn(async (value: Record<string, unknown>) => { Object.assign(state, value); }),
+      remove: vi.fn(async (key: string) => { delete state[key]; })
     } },
     tabs: {
       get: vi.fn(async (_id: number) => ({ id: 7, url: MAIL })),
@@ -170,6 +170,26 @@ describe("browser extension privileged worker", () => {
     await expect(handle({ type: "state" }, popupSender)).resolves.toEqual({ paired: true });
     await expect(handle({ type: "state" }, { ...popupSender, tab: { id: 8, url: popupSender.url } })).resolves.toEqual({ paired: true });
   });
+  it("re-pairs itself from the installed folder secret after its storage was reset, unless the user forgot the pairing", async () => {
+    const secret = "a".repeat(64);
+    const chrome = mockChrome();
+    delete chrome.state.token;
+    const fetch = vi.fn<typeof globalThis.fetch>(async input => String(input).endsWith("/relay-pairing.json")
+      ? Response.json({ version: 1, secret, port: 43891 })
+      : String(input).endsWith("/pair") ? Response.json({ token: "auto-token" }) : Response.json({ accountId: "account", enabled: true }));
+    const { handle } = background.createBridge(chrome, fetch);
+    await expect(handle({ type: "state" }, popupSender)).resolves.toEqual({ paired: true });
+    expect(chrome.state.token).toBe("auto-token");
+    const pairCall = fetch.mock.calls.find(call => String(call[0]).endsWith("/pair"))!;
+    expect(JSON.parse(String(pairCall[1]?.body))).toEqual({ bootstrap: secret });
+    await expect(handle({ type: "forget" }, popupSender)).resolves.toEqual({ paired: false });
+    const forgotten = mockChrome();
+    delete forgotten.state.token;
+    forgotten.state.autoPairOff = true;
+    const quiet = vi.fn<typeof globalThis.fetch>(async () => Response.json({ token: "never" }));
+    await expect(background.createBridge(forgotten, quiet).handle({ type: "state" }, popupSender)).resolves.toEqual({ paired: false });
+    expect(quiet).not.toHaveBeenCalled();
+  });
   it.each([false, true])("pairs through the real HTTP bridge without any account link or provider tab (unrelated tab=%s)", async unrelatedTab => {
     const secrets = new Map<string, unknown>();
     const onDiscover = vi.fn(async () => ({ accountId: "unused", enabled: false }));
@@ -186,6 +206,7 @@ describe("browser extension privileged worker", () => {
       chrome.tabs.query.mockResolvedValue(unrelatedTab ? [{ id: 7, url: "https://example.org/" }] : []);
       const transport = vi.fn<typeof globalThis.fetch>(async (input, init) => {
         const original = new URL(String(input));
+        if (original.href === `chrome-extension://${ID}/relay-pairing.json`) return new Response("", { status: 404 });
         if (original.hostname !== "127.0.0.1" || original.pathname !== "/pair")
           throw new Error("Unexpected provider request during profile-only pairing");
         return globalThis.fetch(`http://127.0.0.1:${server.status().port}${original.pathname}`, {
@@ -196,7 +217,7 @@ describe("browser extension privileged worker", () => {
       await expect(worker.handle({ type: "pair", code: pairing.code }, popupSender)).resolves.toEqual({ paired: true });
       await expect(worker.handle({ type: "state" }, popupSender)).resolves.toEqual({ paired: true });
       expect(server.status().paired).toBe(true);
-      expect(transport).toHaveBeenCalledTimes(1);
+      expect(transport.mock.calls.filter(call => String(call[0]).startsWith("http://")).length).toBe(1);
       expect(onDiscover).not.toHaveBeenCalled();
       expect(onCapture).not.toHaveBeenCalled();
       expect(chrome.tabs.create).not.toHaveBeenCalled();
