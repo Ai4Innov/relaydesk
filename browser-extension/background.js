@@ -823,6 +823,8 @@
     }
 
     chrome.tabs.onActivated?.addListener(async info => {
+      // Tabs left without a content script by an extension update reload once the user switches away.
+      void reloadDeferredTabs().catch(() => {});
       await ready;
       for (const entry of ownedTabs.values()) {
         if (entry.creating) entry.activations.push(info.tabId);
@@ -1971,7 +1973,7 @@
       throw new Error("Unknown browser companion command.");
     }
 
-    return { handle, recoverOrphanedTabs, reloadDeferredTabs };
+    return { handle, recoverOrphanedTabs };
   }
 
   if (typeof module === "object" && module.exports) module.exports = { createBridge, downloadAttachment, validAttachmentIntent };
@@ -1985,6 +1987,5 @@
       if (details.reason === "install" || details.reason === "update")
         void bridge.recoverOrphanedTabs().catch(() => {});
     });
-    root.chrome.tabs.onActivated?.addListener(() => { void bridge.reloadDeferredTabs().catch(() => {}); });
   }
 })(globalThis);

@@ -5,10 +5,10 @@ import { MemorySessionFs } from "./memory-fs";
 import { WorkspaceSessionFs } from "./workspace-fs";
 import { host, type PlatformProfile } from "../platform";
 import { CHAT_PROMPT_MAX, ChatTimeoutError } from "../../shared/chat";
-import { CHAT_CORE_INSTRUCTIONS, CHAT_IDLE_TIMEOUT_MS, CHAT_MAX_RUNTIME_MS, GENERATE_INSTRUCTIONS, generationPrompt, parseAgentResponse,
+import { CHAT_CORE_INSTRUCTIONS, CHAT_IDLE_TIMEOUT_MS, CHAT_MAX_RUNTIME_MS, CHAT_UNBOUNDED_WAIT_MS, GENERATE_INSTRUCTIONS, generationPrompt, parseAgentResponse,
   type AgentResponse, type AiProvider, type AppTool, type ChatAgentRequest, type ChatWorkspace, type WorkspacePermissionRequest } from "../ai/agent";
 
-export { CHAT_IDLE_TIMEOUT_MS, CHAT_MAX_RUNTIME_MS, responseSchema } from "../ai/agent";
+export { CHAT_IDLE_TIMEOUT_MS, CHAT_MAX_RUNTIME_MS, CHAT_UNBOUNDED_WAIT_MS, responseSchema } from "../ai/agent";
 export type { AgentResponse, ChatAgentRequest, ChatWorkspace } from "../ai/agent";
 const WORKSPACE_FILE_TOOLS = ["view", "create", "edit", "glob", "grep"] as const;
 
@@ -199,14 +199,16 @@ export class CopilotAdapter implements AiProvider {
         rejectTimeout(timeoutError);
         void session?.abort().catch(() => undefined);
       };
+      // A running tool (long command, download, build) is progress, not a stall: idle detection pauses until it completes.
+      const runningTools = new Set<string>();
       const activity = () => {
         clearTimeout(idleTimer);
-        idleTimer = setTimeout(() => expire("idle"), CHAT_IDLE_TIMEOUT_MS);
+        if (!runningTools.size) idleTimer = setTimeout(() => expire("idle"), CHAT_IDLE_TIMEOUT_MS);
       };
       activity();
       keepAlive = activity;
       unsubscribeToolActivity = request.onToolActivity?.(activity);
-      deadlineTimer = setTimeout(() => expire("deadline"), CHAT_MAX_RUNTIME_MS);
+      if (CHAT_MAX_RUNTIME_MS > 0) deadlineTimer = setTimeout(() => expire("deadline"), CHAT_MAX_RUNTIME_MS);
       let lastProgress = 0;
       let lastMessage = "";
       unsubscribe = session.on(event => {
@@ -214,6 +216,9 @@ export class CopilotAdapter implements AiProvider {
           const content = (event.data as { content?: string }).content;
           if (typeof content === "string" && content.trim()) lastMessage = content;
         }
+        const toolCallId = (event.data as { toolCallId?: string } | undefined)?.toolCallId ?? "tool";
+        if (event.type === "tool.execution_start") runningTools.add(toolCallId);
+        if (event.type === "tool.execution_complete") runningTools.delete(toolCallId);
         if (["assistant.turn_start", "assistant.turn_end", "assistant.message", "assistant.message_delta",
           "assistant.reasoning_delta", "tool.execution_start", "tool.execution_complete"].includes(event.type)) activity();
         if (["assistant.message_delta", "assistant.reasoning_delta"].includes(event.type) && Date.now() - lastProgress >= 2000) {
@@ -238,7 +243,7 @@ export class CopilotAdapter implements AiProvider {
         request.signal.addEventListener("abort", abortListener, { once: true });
         if (request.signal.aborted) abortListener();
       });
-      const response = await Promise.race([session.sendAndWait({ prompt: request.prompt }, CHAT_MAX_RUNTIME_MS), aborted, timedOut])
+      const response = await Promise.race([session.sendAndWait({ prompt: request.prompt }, CHAT_MAX_RUNTIME_MS || CHAT_UNBOUNDED_WAIT_MS), aborted, timedOut])
         .catch(error => { throw timeoutError ?? error; });
       request.signal.throwIfAborted();
       // Some models (e.g. Claude) end with an empty message after a final tool round; use the last real answer.

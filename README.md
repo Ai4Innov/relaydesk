@@ -131,11 +131,12 @@ Relay Desk is set up so that it just works once an inbox is connected. You can c
 | 🟢 Background browser refresh: keeps capturing open Gmail and Calendar tabs | **On** | Settings → Connections |
 | 🟢 **Approve automatically**: large or unknown-size attachments, costly extraction, and calendar changes without attendees | **On** (size, parser and sandbox limits still apply) | Activity & approvals |
 | 🟡 Shell commands, web requests, reading files and editing/deleting your ordinary files | **Automatic** — a safety check asks before touching system/program folders, app settings, whole drives or home folders, credentials, installs or outbound data | Settings → AI & assistant |
+| 🔴 **Bypass all safety checks** (Safe mode / Full access button at the top of Chat): sensitive and destructive commands, invitations to attendees, everything runs without asking | **Off** — asks for confirmation before turning on | Chat header, or Settings → AI & assistant |
 | 🟡 Saving a draft to Gmail or Outlook, and calendar changes that would notify attendees | **You confirm each one** | — |
 | 🟡 WhatsApp chats (personal conversations with third parties) | **Opt-in per chat** | Settings → Connections |
 | 🔴 Sending email, posting to Slack, deleting mail or events | **Never** | Not possible |
 
-> **Why some items still ask:** emails can contain text written to manipulate an AI ("prompt injection"). Actions with side effects therefore always need your click, even with full access on. Relevant excerpts from AI-enabled accounts go to your AI provider (GitHub, OpenAI or Anthropic). Everything else stays encrypted on your computer. See [privacy and permissions](docs/privacy-and-permissions.md).
+> **Why some items still ask:** emails can contain text written to manipulate an AI ("prompt injection"). Actions with side effects therefore always need your click, unless you explicitly turn on the **Bypass all safety checks** button. Relevant excerpts from AI-enabled accounts go to your AI provider (GitHub, OpenAI or Anthropic). Everything else stays encrypted on your computer. See [privacy and permissions](docs/privacy-and-permissions.md).
 
 ## See it
 

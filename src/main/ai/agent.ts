@@ -2,7 +2,10 @@ import { z } from "zod";
 import type { AiProviderId, AiProviderInfo, Citation, ModelInfo, Snapshot } from "../../shared/contracts";
 
 export const CHAT_IDLE_TIMEOUT_MS = 180_000;
-export const CHAT_MAX_RUNTIME_MS = 600_000;
+/** 0 = no overall deadline: a chat runs as long as the provider keeps making progress. */
+export const CHAT_MAX_RUNTIME_MS: number = 0;
+/** Largest timer Node accepts (~24.8 days); providers that require a wait timeout get this when there is no deadline. */
+export const CHAT_UNBOUNDED_WAIT_MS = 2_147_483_647;
 
 /** Provider-neutral app tool. Structurally compatible with the Copilot SDK `Tool`. */
 export interface AppTool {
@@ -202,7 +205,7 @@ export class ChatTimers {
   private deadline?: ReturnType<typeof setTimeout>;
   private held = 0;
   constructor(private expire: (reason: "idle" | "deadline") => void, private idleMs = CHAT_IDLE_TIMEOUT_MS, deadlineMs = CHAT_MAX_RUNTIME_MS) {
-    this.deadline = setTimeout(() => this.expire("deadline"), deadlineMs);
+    if (deadlineMs > 0) this.deadline = setTimeout(() => this.expire("deadline"), deadlineMs);
     this.activity();
   }
   activity(): void {

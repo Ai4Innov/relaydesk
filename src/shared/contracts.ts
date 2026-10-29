@@ -265,6 +265,8 @@ export interface Settings {
   fullAccessByDefault: boolean;
   /** Activity approvals happen automatically: attachment downloads/processing and calendar changes without attendees. */
   autoApprove: boolean;
+  /** Full access: every assistant action (including sensitive ones and invitations) runs without asking. */
+  bypassSafety: boolean;
   /** Organization mail domains ranked first in tasks, focus and AI review, highest priority first. */
   priorityDomains: string[];
   /** Keep tasks and the focus report updated from new mail in the background (uses the AI budget). */

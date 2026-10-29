@@ -1,10 +1,11 @@
 import { useRef, useState, type FormEvent, type ReactNode } from "react";
-import { ArrowDownToLine, CalendarDays, Database, FolderOpen, Globe, LoaderCircle, Mail, MessageSquare, Plug, Plus, RefreshCw, ShieldCheck, Sparkles, Star, Terminal, Trash2, Wrench, X } from "lucide-react";
+import { ArrowDownToLine, CalendarDays, Database, FolderOpen, Globe, LoaderCircle, Mail, MessageSquare, Plug, Plus, RefreshCw, ShieldAlert, ShieldCheck, Sparkles, Star, Terminal, Trash2, Wrench, X } from "lucide-react";
 import type { Account, Command, CommandResult, GmailRelayPublicStatus, Provider, Settings, Snapshot } from "../shared/contracts";
 import { fileSize, formatDate, hostOS, OS_TEXT } from "./utils";
 import { BrowserSetup } from "./BrowserSetup";
 import { FullMailArchive } from "./FullMailArchive";
 import { RefreshControls } from "./RefreshControls";
+import { FullAccessButton } from "./FullAccessButton";
 import { KnowledgeSources } from "./KnowledgeSources";
 import { AI_PROVIDER_HELP, activeAi } from "./ai";
 
@@ -405,6 +406,10 @@ function Assistant({ data, run, busy }: Props) {
       <div className="setting-row compact"><div><strong><Globe size={14}/> Web access</strong><p>Automatic: public pages are fetched directly; private-network addresses or URLs carrying emails, tokens or long data ask you first.</p></div>
         <select aria-label="Web access" value={data.settings.assistantWeb} disabled={busy || !tools} onChange={event => update({ assistantWeb: event.target.value === "off" ? "off" : event.target.value === "ask" ? "ask" : "auto" })}>
           <option value="auto">Automatic (ask only for sensitive)</option><option value="ask">Ask every time</option><option value="off">Off</option></select></div>
+      <div className="setting-row compact"><div><strong><ShieldAlert size={14}/> Full access (bypass all safety checks)</strong><p>{data.settings.bypassSafety
+        ? "On: every command, file change or deletion, web request and calendar invitation runs without asking, including sensitive and destructive ones. Each action is still listed in the chat."
+        : "Off: sensitive or destructive actions (system files, credentials, invitations…) wait for your approval. Also available as a button at the top of Chat."}</p></div>
+        <FullAccessButton data={data} run={run}/></div>
     </section>
   </>;
 }

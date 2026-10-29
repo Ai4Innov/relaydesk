@@ -127,11 +127,11 @@ Shutdown cancels pending chat work. Recovery marks interrupted turns cancelled a
 
 - 20 conversations; 60 turns per conversation (user and assistant turns both count).
 - 12,000 characters per user message; 100,000 characters for the complete submitted history/prompt. Oversized input is rejected, **not silently truncated**. Conversation titles are short display labels; the original user message remains intact.
-- No cap on the number of tool calls or agent rounds per answer; six proposal cards per assistant turn. Long runs are bounded only by the inactivity timeout and overall deadline below.
+- No cap on the number of tool calls or agent rounds per answer; six proposal cards per assistant turn. Long runs are bounded only by the inactivity timeout below.
 - 16,000 characters of tool arguments or exact action preview. A tool response over 24,000 characters is withheld, and the agent is asked for a smaller page. Once 320,000 characters of tool results have been gathered, further evidence is withheld and the agent answers from what it has, stating that coverage was limited. Neither case fails the answer.
 - 1,000 tracked evidence dependencies; 20,000 characters in a final model answer.
 - Search returns at most 12 excerpts. Recent inbox pages contain up to 12 messages with 1,000-character excerpts. Message bodies are paged in 10,000-character slices; attachment text in six-chunk pages; tasks/calendar in 20-item pages.
-- 180-second inactivity timeout, reset by SDK activity or actual inbox-download progress, with a fixed 10-minute overall deadline; tool progress and cancellation are live, final text is not token-streamed.
+- 180-second inactivity timeout, reset by SDK activity or actual inbox-download progress and paused while a tool is executing; no overall deadline; tool progress and cancellation are live, final text is not token-streamed.
 
 Argument-size limits stop the request with an explicit visible error. Output limits withhold evidence and the answer states that coverage was limited; they never silently present partial evidence as complete.
 

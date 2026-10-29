@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CHAT_IDLE_TIMEOUT_MS, CHAT_MAX_RUNTIME_MS, ChatAgentRequest, CopilotAdapter, chatSessionConfig } from "../src/main/copilot";
+import { CHAT_IDLE_TIMEOUT_MS, CHAT_UNBOUNDED_WAIT_MS, ChatAgentRequest, CopilotAdapter, chatSessionConfig } from "../src/main/copilot";
 import { MemorySessionFs } from "../src/main/copilot/memory-fs";
 
 const runtime = vi.hoisted(() => ({
@@ -59,7 +59,7 @@ describe("isolated SDK chat agent (offline)", () => {
     await expect(adapter.chat(input)).resolves.toMatchObject({ answer: "Hello" });
     expect(runtime.create).toHaveBeenCalledWith(expect.objectContaining({ model: "selected-model", tools: input.tools }));
     expect(runtime.update).toHaveBeenCalledWith({ installedPlugins: [] });
-    expect(runtime.send).toHaveBeenCalledWith({ prompt: input.prompt }, CHAT_MAX_RUNTIME_MS);
+    expect(runtime.send).toHaveBeenCalledWith({ prompt: input.prompt }, CHAT_UNBOUNDED_WAIT_MS);
     expect(runtime.disconnect).toHaveBeenCalledOnce();
     await adapter.stop();
   });
@@ -153,20 +153,25 @@ describe("isolated SDK chat agent (offline)", () => {
     expect(vi.getTimerCount()).toBe(0);
     await adapter.stop();
   });
-  it("enforces the overall deadline even when the provider keeps reporting activity", async () => {
+  it("has no overall deadline and never treats a long-running tool as a stall", async () => {
     const adapter = new CopilotAdapter(".", vi.fn());
     await adapter.connect(); vi.useFakeTimers();
-    let listener!: (event: { type: string }) => void;
+    let listener!: (event: { type: string; data?: unknown }) => void;
     runtime.on.mockImplementation(callback => { listener = callback; return vi.fn(); });
-    runtime.send.mockImplementationOnce(() => new Promise(() => {}));
+    let finish!: (value: { data: { content: string } }) => void;
+    runtime.send.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
     const running = adapter.chat(request());
-    const outcome = expect(running).rejects.toMatchObject({ reason: "deadline" });
     await vi.advanceTimersByTimeAsync(0);
-    for (let elapsed = 120000; elapsed < CHAT_MAX_RUNTIME_MS; elapsed += 120000) {
+    for (let elapsed = 0; elapsed < 30 * 60_000; elapsed += 120000) {
       await vi.advanceTimersByTimeAsync(120000);
       listener({ type: "assistant.message_delta" });
     }
-    await vi.advanceTimersByTimeAsync(120000); await outcome;
+    listener({ type: "tool.execution_start", data: { toolCallId: "build" } });
+    await vi.advanceTimersByTimeAsync(CHAT_IDLE_TIMEOUT_MS * 5);
+    expect(runtime.abort).not.toHaveBeenCalled();
+    listener({ type: "tool.execution_complete", data: { toolCallId: "build" } });
+    finish({ data: { content: '{"answer":"Long task done","citationIds":[]}' } });
+    await expect(running).resolves.toMatchObject({ answer: "Long task done" });
     expect(vi.getTimerCount()).toBe(0);
     await adapter.stop();
   });

@@ -32,6 +32,7 @@ export const defaultSettings: Settings = {
   assistantWeb: "auto",
   fullAccessByDefault: true,
   autoApprove: true,
+  bypassSafety: false,
   priorityDomains: [...DEFAULT_PRIORITY_DOMAINS],
   autoFocus: true
 };

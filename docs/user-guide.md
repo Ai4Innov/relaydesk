@@ -47,7 +47,8 @@ the workspace run without asking, and each one is listed under **N actions ran a
 A built-in safety check (deterministic code, not the AI) stops anything sensitive or destructive and
 shows a **Sensitive: needs your approval** card first (**Allow once** or **Deny**), for example:
 
-- deleting, replacing or changing **system or program folders** (`C:\Windows`, `Program Files`, `ProgramData`, `/usr`, `/etc`...), **app settings** (`AppData`, dotfolders like `~/.config`, `~/Library`) or an **entire** drive, home folder, workspace or main folder such as Documents/Desktop/Downloads (files and subfolders inside them are fine);`r`n- emptying the Recycle Bin, registry/environment/certificate stores, `git push --force`, formatting disks, killing processes, shutdown;
+- deleting, replacing or changing **system or program folders** (`C:\Windows`, `Program Files`, `ProgramData`, `/usr`, `/etc`...), **app settings** (`AppData`, dotfolders like `~/.config`, `~/Library`) or an **entire** drive, home folder, workspace or main folder such as Documents/Desktop/Downloads (files and subfolders inside them are fine);
+- emptying the Recycle Bin, registry/environment/certificate stores, `git push --force`, formatting disks, killing processes, shutdown;
 - admin/sudo, registry, services, scheduled tasks, firewall/security settings, user accounts, permissions;
 - installing software or running downloaded/encoded code;
 - touching credentials, keys, browser data or Relay Desk's private data folder;
@@ -58,6 +59,14 @@ Sensitive actions always need their own approval, even after **Allow for this re
 **Automatic**, **Ask every time** or **Off** for shell and web in **Settings → AI & assistant**
 (installs from older versions are switched to Automatic once).
 Email content never triggers these tools on its own, and Relay Desk never sends email.
+
+**Full access.** The **Safe mode / Full access** button at the top of Chat (also in **Settings → AI & assistant**)
+bypasses every safety check after a confirmation: sensitive and destructive commands, file changes anywhere,
+local-network URLs and calendar invitations to attendees all run without asking. Each action is still listed
+as "(full access)" under the reply. Turn it off to get approval cards back.
+
+There is no overall time limit on an answer: long tool runs (builds, downloads, large reviews) can take as long
+as they need. Only a provider that stays completely silent for three minutes, with no tool running, is stopped.
 
 ### Folders and shared links
 

@@ -1469,9 +1469,10 @@ export class RelayService {
         this.vault.put("approvals", approval.id, approval);
         this.host.changed();
         // Approve by default only when no attendee would be notified; invitations still need an explicit click.
-        if (this.settings().autoApprove && !command.change.attendees.some(attendee => attendee.trim())) {
+        const invites = command.change.attendees.some(attendee => attendee.trim());
+        if (this.settings().bypassSafety || (this.settings().autoApprove && !invites)) {
           const saved = await this.command({ type: "calendar.approve", approvalId: approval.id, hash: approval.hash }, beforeWrite);
-          return { ...saved, approvalId: approval.id, message: "Calendar change saved (approved automatically: no attendees are notified)." };
+          return { ...saved, approvalId: approval.id, message: invites ? "Calendar change saved and invitations sent (full access is on)." : "Calendar change saved (approved automatically: no attendees are notified)." };
         }
         return { approvalId: approval.id, message: "Review the exact calendar change and its invitation effects before approving." };
       }

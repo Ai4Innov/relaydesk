@@ -145,4 +145,21 @@ it("runs ordinary actions automatically but stops sensitive ones for an individu
     expect(permissions.find(item => item.risk)?.status).toBe("approved");
     expect(f.chat.snapshot().conversations[0].grants ?? []).toEqual([]);
   });
+  it("runs every action, destructive ones included, without asking when the user turns on full access", async () => {
+    const f = fixture("ask");
+    Object.assign(f.hooks.settings(), { bypassSafety: true });
+    const destructive = { kind: "shell", fullCommandText: host.id === "win32" ? "Remove-Item -Recurse C:\\Windows\\System32" : "rm -rf /usr/lib" } as unknown as PermissionRequest;
+    const outside = join(tmpdir(), "relay-outside", "plan.md");
+    f.hooks.generate.mockImplementationOnce(async request => {
+      expect(await request.workspace!.permission(destructive)).toBe("approve");
+      expect(await request.workspace!.permission({ kind: "url", url: "http://127.0.0.1:9339/json" } as unknown as PermissionRequest)).toBe("approve");
+      expect(await request.workspace!.permission({ kind: "write", fileName: outside } as unknown as PermissionRequest)).toBe("approve");
+      expect(request.workspace!.writeApproved?.(outside)).toBe(true);
+      return { answer: "Done.", citationIds: [] };
+    });
+    await f.send("Clean everything");
+    const permissions = f.last().permissions!;
+    expect(permissions.map(item => item.status)).toEqual(["auto", "auto", "auto"]);
+    expect(permissions[0].title).toMatch(/full access/);
+  });
 });

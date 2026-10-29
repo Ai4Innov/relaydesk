@@ -228,3 +228,7 @@
 .chat-auto-actions summary { cursor: pointer; display: flex; align-items: center; gap: 6px; }
 .chat-auto-actions ul { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 6px; }
 .chat-auto-actions li strong { display: block; font-weight: 600; margin-bottom: 2px; }
+.chat-header-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.full-access-toggle { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; padding: 4px 9px; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: #6d6656; cursor: pointer; }
+.full-access-toggle:hover { border-color: #bdac84; }
+.full-access-toggle.on { background: #fbe9e4; border-color: #d98c79; color: #a2432e; font-weight: 600; }

@@ -49,6 +49,7 @@ const settingsPatch = z.object({
   assistantWeb: z.enum(["auto", "ask", "off"]).optional(),
   fullAccessByDefault: z.boolean().optional(),
   autoApprove: z.boolean().optional(),
+  bypassSafety: z.boolean().optional(),
   priorityDomains: z.array(z.string().trim().toLowerCase().regex(/^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/, "Use mail domains such as finco.digital.")).max(20).optional(),
   autoFocus: z.boolean().optional()
 }).strict();

@@ -1013,6 +1013,16 @@ export class ChatService {
     if (!this.active || this.active.turn !== turn || this.active.controller.signal.aborted || !settings.assistantTools) return "deny";
     let kind: ChatPermission["kind"], title: string, detail: string, risk: string | undefined;
     const automatic = (mode: string) => mode === "auto";
+    if (settings.bypassSafety) {
+      // Full access was switched on by the user: approve every request, sensitive ones included, but keep a visible log.
+      const target = request.kind === "shell" ? text(raw.fullCommandText, 8000) : request.kind === "url" ? text(raw.url, 2000)
+        : text(raw.resolvedPath) || text(raw.path) || text(raw.fileName);
+      const label = { shell: `Run a ${host.shell.name} command`, url: "Fetch a web page", read: "Read a file", write: "Change a file" }[request.kind as string] ?? `Use ${request.kind}`;
+      const logged = (["shell", "url", "read", "write"] as string[]).includes(request.kind) ? request.kind as ChatPermission["kind"] : "shell";
+      if (request.kind === "write" && target) approvedWrites.add(host.path.resolve(directory, target));
+      if (request.kind === "read" && target) approvedReads.add(target);
+      return this.autoApproved(turn, logged, `${label} (full access)`, target || request.kind);
+    }
     if (request.kind === "write") {
       const named = text(raw.resolvedPath) || text(raw.path) || text(raw.fileName);
       const path = named ? host.path.resolve(directory, named) : "";
@@ -1219,10 +1229,12 @@ export class ChatService {
     }
     const guards = this.validateAction(command, turn);
     const review = this.review(command, turn);
-    const autoWrite = command.type === "calendar.propose" && this.hooks.settings().autoApprove && !command.change.attendees.some(attendee => attendee.trim());
+    const autoWrite = command.type === "calendar.propose" && (this.hooks.settings().bypassSafety
+      || (this.hooks.settings().autoApprove && !command.change.attendees.some(attendee => attendee.trim())));
     const localCalendar = (command.type === "calendar.propose" || command.type === "task.schedule")
       && this.vault.get<Account>("accounts", command.change.accountId)?.connection === "browser";
     const description = localCalendar ? "Adds this event to your Relay Desk calendar for this account. Google Calendar is not changed and nobody is notified; the event gets an Add to Google Calendar button." :
+      autoWrite && command.change.attendees.some(attendee => attendee.trim()) ? "Writes exactly this calendar change and sends its invitations when you confirm (full access is on)." :
       autoWrite ? "Writes exactly this calendar change when you confirm. No attendees are notified, so it is approved automatically (Activity setting)." :
       command.type === "calendar.propose" ? "Creates a separate calendar approval, not a provider write. Afterwards ask chat to prepare its exact write preview, or review it in Calendar." :
       command.type === "draft.generate" ? "Generates a local reply draft using the selected AI provider. Afterwards ask chat for an exact native-save preview, or review it in Drafts. Never sends mail." :
