@@ -16,7 +16,7 @@ import { CopilotAdapter } from "./copilot";
 import { ClaudeAdapter } from "./ai/claude";
 import { CodexAdapter } from "./ai/codex";
 import { AiRouter } from "./ai/router";
-import type { AiProviderId } from "../shared/contracts";
+import { HELP_LINKS, type AiProviderId } from "../shared/contracts";
 
 const CLAUDE_KEY_SECRET = "ai:anthropic";
 import { proposeChange, validateApproval } from "./approvals";
@@ -1115,6 +1115,8 @@ export class RelayService {
           : `https://mail.google.com/mail/${authuser}`;
         await this.host.openExternal(url); return {};
       }
+      case "help.open":
+        await this.host.openExternal(HELP_LINKS[command.topic]); return {};
       case "browser.open-link": {
         const result = parseBrowserAccountLink(command.url);
         if (!result.link) throw new Error(result.error);

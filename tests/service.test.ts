@@ -223,6 +223,15 @@ describe("RelayService safety integration (in-memory storage and offline provide
       expect(commandSchema.safeParse({ type: "settings.update", patch: { refreshIntervalSeconds: value } }).success).toBe(false);
   });
 
+  it("opens only the fixed Apps Script relay links on GitHub", async () => {
+    await service.command({ type: "help.open", topic: "gmail-relay-script" });
+    expect(host.openExternal).toHaveBeenLastCalledWith("https://github.com/Ai4Innov/relaydesk/blob/main/apps-script/gmail-relay/Code.gs");
+    await service.command({ type: "help.open", topic: "gmail-relay-guide" });
+    expect(host.openExternal).toHaveBeenLastCalledWith(expect.stringMatching(/apps-script\/gmail-relay\/README\.md#relay-desk-access/));
+    expect(commandSchema.safeParse({ type: "help.open", topic: "https://evil.example" }).success).toBe(false);
+    expect(commandSchema.safeParse({ type: "help.open", topic: "gmail-relay-script", url: "https://evil.example" }).success).toBe(false);
+  });
+
   it("hands the exact reviewed reply to Gmail and opens Drafts only after a successful native save", async () => {
     const generated = await service.command({ type: "draft.generate", messageId: message.id });
     await service.command({ type: "draft.handoff", draftId: generated.draftId!, body: "My reviewed reply",

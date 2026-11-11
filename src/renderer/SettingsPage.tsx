@@ -261,6 +261,20 @@ function RelayForm({ run }: { run: Run }) {
     if (await relayRun(command, "Validating the relay and adding it…", "Gmail Apps Script relay connected.")) setRelay(value => ({ ...value, token: "" }));
   }}>
     <p className="caption">Complete emails and attachments, no OAuth app needed. Deploy the script as a Web app (Execute as Me), run <code>rotateRelayToken()</code>, then paste the URL and token. Rotate the token at least every 90 days.</p>
+    <div className="button-row wrap relay-help">
+      <button type="button" className="link-button" onClick={() => void run({ type: "help.open", topic: "gmail-relay-script" })}><Globe size={13}/>Apps Script code (Code.gs)</button>
+      <button type="button" className="link-button" onClick={() => void run({ type: "help.open", topic: "gmail-relay-manifest" })}><Globe size={13}/>appsscript.json</button>
+      <button type="button" className="link-button" onClick={() => void run({ type: "help.open", topic: "gmail-relay-guide" })}><Globe size={13}/>Full setup guide on GitHub</button>
+    </div>
+    <details className="relay-steps"><summary>Setup steps</summary><ol>
+      <li>Signed in to the Gmail account to import, create a project at <code>script.google.com</code>.</li>
+      <li>Paste <strong>Code.gs</strong> into the project. In <strong>Project Settings</strong>, tick <em>Show "appsscript.json" manifest file</em> and paste <strong>appsscript.json</strong> (it enables the Gmail API service).</li>
+      <li>At the top of the script, set <code>DRIVE_FOLDER_URL</code> (a My Drive folder you own), <code>START_DATE</code>, <code>TIME_ZONE</code> and <code>CONTINUOUS: true</code>.</li>
+      <li>Select <code>startGmailExport</code>, click <strong>Run</strong> and approve the permissions. Export continues every 5 minutes in Google's cloud.</li>
+      <li><strong>Deploy → New deployment → Web app</strong>, <em>Execute as: Me</em>, <em>Who has access: Anyone</em>, then <strong>Deploy</strong> and copy the <code>/exec</code> URL. Requests without a valid token are rejected.</li>
+      <li>Run <code>rotateRelayToken</code> and copy the token from the execution log (it is shown only once).</li>
+      <li>Paste the URL and token below, tick the authorization box and click <strong>Add relay</strong>.</li>
+    </ol><p className="caption">Rotate: run <code>rotateRelayToken</code> again and paste the new token (the old one keeps working 24 h). Cut access instantly: <code>revokeRelayAccess</code>. After editing the code, use <strong>Manage deployments → Edit → New version</strong> to keep the same URL.</p></details>
     <label>Web app URL<input value={relay.url} onChange={event => setRelay(value => ({ ...value, url: event.target.value }))} placeholder="https://script.google.com/macros/s/.../exec"/></label>
     <label>Relay token<input type="password" autoComplete="off" spellCheck={false} value={relay.token} onChange={event => setRelay(value => ({ ...value, token: event.target.value }))}/></label>
     <label>Poll interval<select value={relay.pollIntervalMinutes} onChange={event => setRelay(value => ({ ...value, pollIntervalMinutes: Number(event.target.value) }))}>

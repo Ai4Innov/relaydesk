@@ -391,6 +391,7 @@ export type Command =
   | { type: "calendar.propose"; change: EventChange }
   | { type: "calendar.approve"; approvalId: string; hash: string }
   | { type: "calendar.openInGoogle"; eventId: string }
+  | { type: "help.open"; topic: HelpTopic }
   | { type: "open.message"; messageId: string }
   | { type: "message.load"; messageId: string; refresh?: boolean }
   | { type: "message.html"; messageId: string }
@@ -425,3 +426,12 @@ export interface DesktopBridge {
 declare global {
   interface Window { relay: DesktopBridge }
 }
+
+const RELAY_REPO = "https://github.com/Ai4Innov/relaydesk/blob/main/apps-script/gmail-relay";
+/** Fixed documentation links the renderer may open; it never passes arbitrary URLs. */
+export const HELP_LINKS = {
+  "gmail-relay-script": `${RELAY_REPO}/Code.gs`,
+  "gmail-relay-manifest": `${RELAY_REPO}/appsscript.json`,
+  "gmail-relay-guide": `${RELAY_REPO}/README.md#relay-desk-access-web-app--rotatable-token`
+} as const;
+export type HelpTopic = keyof typeof HELP_LINKS;

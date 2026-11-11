@@ -134,7 +134,10 @@ The relay script and its setup guide live in [`apps-script/gmail-relay`](../apps
 
 For Gmail mailboxes where OAuth is not configured, Relay Desk can import from a
 user-owned Google Apps Script relay that exports complete `message.eml` files and
-attachments to Drive. In Apps Script, deploy the script as **Deploy → New
+attachments to Drive. The relay form links to the script ([Code.gs](../apps-script/gmail-relay/Code.gs),
+[appsscript.json](../apps-script/gmail-relay/appsscript.json)) and the
+[setup guide](../apps-script/gmail-relay/README.md#relay-desk-access-web-app--rotatable-token) on GitHub,
+and has a **Setup steps** list. In Apps Script, deploy the script as **Deploy → New
 deployment → Web app**, choose **Execute as: Me** and **Who has access: Anyone**,
 then run `rotateRelayToken()` and paste the web app URL plus token in **Settings
 → Connections → Add a connection → Gmail via Apps Script relay**. After editing the script, use **Manage
