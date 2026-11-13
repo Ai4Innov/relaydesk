@@ -84,6 +84,12 @@ describe("chat agent tools, consent and encrypted checkpoint state", () => {
     expect(f.last().text).toContain("requests a review");
     expect(f.last().text.includes("Some sources were updated")).toBe(changed);
   });
+  it("keeps creating conversations past the old 20-conversation cap", async () => {
+    const f = fixture();
+    for (let index = 0; index < 25; index++) await f.chat.command({ type: "chat.new" });
+    await f.send("Help me");
+    expect(f.chat.snapshot().conversations).toHaveLength(26);
+  });
   it("does not publish a claimed latest-inbox answer without any actual freshness attempt", async () => {
     const f = fixture();
     f.hooks.generate.mockResolvedValue({ answer: "I fetched the latest inbox and everything is complete.", citationIds: [] });

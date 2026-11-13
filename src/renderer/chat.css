@@ -232,3 +232,10 @@
 .full-access-toggle { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; padding: 4px 9px; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: #6d6656; cursor: pointer; }
 .full-access-toggle:hover { border-color: #bdac84; }
 .full-access-toggle.on { background: #fbe9e4; border-color: #d98c79; color: #a2432e; font-weight: 600; }
+.voice-button { width: 34px; height: 34px; padding: 0; border-radius: 999px; background: transparent; color: #4f5d5a; border: 1px solid var(--border); gap: 4px; }
+.voice-button:hover:not(:disabled) { background: rgba(18, 109, 101, .08); border-color: #9cbdb8; }
+.voice-button span { font-size: 11px; font-variant-numeric: tabular-nums; }
+.voice-button.recording, .voice-button.busy { width: auto; padding: 0 11px; }
+.voice-button.recording { background: #fbe9e4; border-color: #d98c79; color: #a2432e; animation: voice-pulse 1.4s ease-in-out infinite; }
+.voice-button.recording:hover:not(:disabled) { background: #f7dcd4; }
+@keyframes voice-pulse { 50% { box-shadow: 0 0 0 4px rgba(217, 140, 121, .25); } }

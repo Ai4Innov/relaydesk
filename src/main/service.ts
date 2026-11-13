@@ -9,6 +9,7 @@ import { ConnectorHub } from "./connectors";
 import { GMAIL_RELAY_PROVIDER_ID } from "./connectors/gmail-relay";
 import { AttachmentProcessor, extractIsolated } from "./attachments";
 import { ensureOcrModels } from "./attachments/ocr-models";
+import { decodePcm16, VoiceTranscriber } from "./voice";
 import { KnowledgeLibrary } from "./knowledge";
 import { browserAttachmentGuard, importBrowserAttachment, processRetainedBrowserAttachment } from "./attachments/browser-import";
 import { attachmentViewGuard, saveAttachment, viewAttachment } from "./attachments/viewing";
@@ -86,6 +87,7 @@ interface BrowserDraftContext {
 export { safeError };
 export class RelayService {
   readonly retrieval: Retrieval;
+  readonly voice: VoiceTranscriber;
   readonly connectors: ConnectorHub;
   readonly copilot: CopilotAdapter;
   readonly claude: ClaudeAdapter;
@@ -126,6 +128,7 @@ export class RelayService {
 
   constructor(readonly vault: Vault, directory: string, private host: Host) {
     this.retrieval = new Retrieval(vault, join(directory, "models"));
+    this.voice = new VoiceTranscriber(join(directory, "models"));
     this.connectors = new ConnectorHub(vault, host.openExternal);
     this.copilot = new CopilotAdapter(join(directory, "copilot-workspace"), host.changed);
     this.claude = new ClaudeAdapter(() => this.vault.get<{ key: string }>("secrets", CLAUDE_KEY_SECRET)?.key, host.changed);
@@ -1114,6 +1117,12 @@ export class RelayService {
           : command.kind === "calendar" ? `https://calendar.google.com/calendar/${authuser}#agenda`
           : `https://mail.google.com/mail/${authuser}`;
         await this.host.openExternal(url); return {};
+      }
+      case "voice.transcribe": {
+        const settings = this.settings();
+        const result = await this.voice.transcribe(decodePcm16(command.audio), { model: settings.voiceModel, language: settings.voiceLanguage });
+        return { transcript: result.text, transcriptLanguage: result.language,
+          message: result.text ? undefined : "No speech was recognized. Check your microphone and try again." };
       }
       case "help.open":
         await this.host.openExternal(HELP_LINKS[command.topic]); return {};

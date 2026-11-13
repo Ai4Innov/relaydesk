@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, Notification, safeStorage, shell, Tray } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, Notification, safeStorage, shell, systemPreferences, Tray } from "electron";
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { randomBytes, createHash } from "node:crypto";
 import { join, resolve } from "node:path";
@@ -72,7 +72,13 @@ function openWindow(): void {
   const entryUrl = MAIN_WINDOW_VITE_DEV_SERVER_URL || pathToFileURL(rendererFile).href;
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event, url) => { if (url !== entryUrl) event.preventDefault(); });
-  window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  // Only the app's own page may use the microphone (voice instructions); every other permission is denied.
+  window.webContents.session.setPermissionRequestHandler((contents, permission, callback, details) => {
+    const audioOnly = permission === "media" && "mediaTypes" in details && (details.mediaTypes ?? []).length > 0 && details.mediaTypes!.every(type => type === "audio");
+    if (!audioOnly || !window || contents !== window.webContents || details.requestingUrl.split("#")[0] !== entryUrl.split("#")[0]) return callback(false);
+    if (process.platform !== "darwin") return callback(true);
+    void systemPreferences.askForMediaAccess("microphone").then(callback, () => callback(false));
+  });
   window.webContents.session.webRequest.onHeadersReceived((details, callback) => callback({
     responseHeaders: {
       ...details.responseHeaders,

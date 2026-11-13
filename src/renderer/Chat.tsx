@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Activity, ArrowDown, ArrowUp, CalendarDays, Check, CheckCheck, CircleAlert, Download, ExternalLink, FileText, Inbox, LoaderCircle, MessageSquare, Plus, Search, Settings2, ShieldCheck, Sparkles, Square, Trash2, TriangleAlert, X } from "lucide-react";
 import { FullAccessButton } from "./FullAccessButton";
+import { VoiceButton } from "./VoiceButton";
 import type { Command, CommandResult, Snapshot } from "../shared/contracts";
 import { chatFileOpenable, skipsChatMailRefresh, type ChatAction, type ChatConversation, type ChatFile, type ChatMailRefresh, type ChatPermission, type ChatTurn } from "../shared/chat";
 import { RichMessage } from "./RichMessage";
@@ -13,7 +14,7 @@ import { activeAi } from "./ai";
 
 const CONNECT_TITLES = { copilot: "Bring your Copilot subscription.", claude: "Bring your Anthropic API key.", codex: "Bring your ChatGPT plan through Codex." } as const;
 
-type Run = (command: Command, success?: string) => Promise<CommandResult | undefined>;
+type Run = (command: Command, success?: string, onError?: (text: string) => void) => Promise<CommandResult | undefined>;
 type ToolPage = "inbox" | "productivity" | "calendar" | "activity" | "settings" | "archive";
 interface ChatProps { data: Snapshot; run: Run; navigate: (page: ToolPage) => void }
 interface PendingQuestion { draft: string; selectedId: string; conversationId?: string; model: string; scope: string }
@@ -210,6 +211,20 @@ export function Chat({ data, run, navigate }: ChatProps) {
     } catch { setError("Could not send your message. Your text is still here."); }
     finally { requestLock.current = false; setRequestPending(false); composer.current?.focus(); }
   };
+  // A dictated instruction is sent once React has applied it to the draft.
+  const voiceSend = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (voiceSend.current === undefined || voiceSend.current !== draft) return;
+    voiceSend.current = undefined;
+    send();
+  });
+  const dictated = (text: string) => {
+    setError("");
+    const next = draft.trim() ? `${draft.replace(/\s+$/, "")} ${text}` : text;
+    setDraft(next);
+    if (data.settings.voiceAutoSend) voiceSend.current = next;
+    composer.current?.focus();
+  };
   const send = () => {
     if (!canSend || requestLock.current || pendingQuestionRef.current) return;
     const question = { draft, selectedId: selected, conversationId: conversation?.id, model, scope: mailScope };
@@ -321,7 +336,7 @@ export function Chat({ data, run, navigate }: ChatProps) {
           <textarea id="chat-message" ref={composer} rows={3} maxLength={12000} placeholder="Ask, plan, or tell me what you'd like to get done…" value={draft} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (shouldSendChat(event)) { event.preventDefault(); void send(); } }} aria-describedby="chat-composer-help"/>
           <div className="chat-composer-toolbar">
             <label className="model-select"><Sparkles size={14}/><span className="sr-only">Chat model</span><select aria-label="Chat model" value={model} disabled={!data.models.length} onChange={event => { dismissRefresh(); setModel(event.target.value); }}><option value="">{data.models.length ? "Choose a model" : "Connect for available models"}</option>{model && !availableModel && <option value={model} disabled>Unavailable: {model}</option>}{data.models.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
-            <div className="button-row">{chatBusy
+            <div className="button-row"><VoiceButton run={run} disabled={requestPending} autoSend={data.settings.voiceAutoSend} onTranscript={dictated} onError={setError}/>{chatBusy
               ? <button key="stop" type="button" className="secondary small" disabled={requestPending} onClick={event => { event.preventDefault(); void run({ type: "chat.cancel" }); }}><Square size={13}/>Stop response</button>
               : <button key="send" type="submit" aria-label="Send message" className="chat-send" disabled={!canSend || !!pendingQuestion}>{requestPending ? <LoaderCircle size={17} className="spin"/> : <ArrowUp size={18}/>}</button>}
             </div>

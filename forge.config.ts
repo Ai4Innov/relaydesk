@@ -32,6 +32,7 @@ const config: ForgeConfig = {
     executableName: "RelayDesk",
     appBundleId: "com.relaydesk.personal",
     appCategoryType: "public.app-category.productivity",
+    extendInfo: { NSMicrophoneUsageDescription: "Relay Desk transcribes your spoken instructions locally on this computer." },
     // Runtime/native dependencies are deliberately external to the Vite bundle.
     ignore: path => {
       const normalized = path.replace(/\\/g, "/");

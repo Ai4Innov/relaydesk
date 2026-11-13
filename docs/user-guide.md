@@ -33,6 +33,22 @@ Attention summaries include recent arrivals and one newest message per conversat
 so repeated old replies cannot crowd out today's mail. Background sync settings,
 account/source permissions and provider-write approvals remain unchanged.
 
+### Voice instructions
+
+Click the **microphone** next to Send, speak, then click it again (it stops by itself
+after 15 minutes). The recording is transcribed **locally** with OpenAI's open Whisper
+model running in Relay Desk; audio is never uploaded or stored. The text is added to the
+message box so you can correct it before sending.
+
+- **First use** downloads the model once (Fast/base about 130 MB, Accurate/small about
+  450 MB) into the app data folder; later transcriptions take a few seconds.
+- **Language** is detected automatically; pick a fixed language in **Settings → AI &
+  assistant → Voice instructions** if detection guesses wrong.
+- Turn on **Send right after speaking** to send dictated instructions without reviewing them.
+- Windows/macOS may ask for microphone permission the first time. Relay Desk only
+  accepts audio-only microphone requests from its own window; camera and screen requests
+  stay blocked. Proper names may be misheard, so check them before sending.
+
 ### Assistant tools (files, documents, shell, web)
 
 Chat can also act like a native coding agent (with any provider): it can read and write files in its

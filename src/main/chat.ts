@@ -445,7 +445,6 @@ export class ChatService {
     return { conversationId: conversation.id, message: "The assistant is working. You can cancel this chat request." };
   }
   private newConversation(): StoredConversation {
-    if (this.state.conversations.length >= 20) throw new Error("Delete an old conversation before creating more (20 maximum).");
     const conversation: StoredConversation = { id: randomUUID(), title: "New conversation", updatedAt: now(), turns: [] };
     this.state.conversations.unshift(conversation); this.state.activeConversationId = conversation.id;
     this.persist(); return conversation;

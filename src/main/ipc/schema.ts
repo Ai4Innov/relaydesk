@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { absoluteFolder, host } from "../platform";
 import { productivitySchemas } from "./productivity-schema";
+import { VOICE_AUDIO_MAX_BASE64 } from "../voice";
 import { CHAT_MESSAGE_MAX } from "../../shared/chat";
 import { ACCOUNT_LINK_ERROR, ACCOUNT_LINK_MAX_LENGTH, parseBrowserAccountLink } from "../../shared/browser-account-link";
 
@@ -50,6 +51,9 @@ const settingsPatch = z.object({
   fullAccessByDefault: z.boolean().optional(),
   autoApprove: z.boolean().optional(),
   bypassSafety: z.boolean().optional(),
+  voiceModel: z.enum(["base", "small"]).optional(),
+  voiceLanguage: z.string().regex(/^(?:auto|[a-z]{2,3})$/).optional(),
+  voiceAutoSend: z.boolean().optional(),
   priorityDomains: z.array(z.string().trim().toLowerCase().regex(/^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/, "Use mail domains such as finco.digital.")).max(20).optional(),
   autoFocus: z.boolean().optional()
 }).strict();
@@ -130,6 +134,7 @@ export const commandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("calendar.propose"), change: eventChange }).strict(),
   z.object({ type: z.literal("calendar.approve"), approvalId: id, hash: z.string().length(64) }).strict(),
   z.object({ type: z.literal("calendar.openInGoogle"), eventId: id }).strict(),
+  z.object({ type: z.literal("voice.transcribe"), audio: z.string().min(1).max(VOICE_AUDIO_MAX_BASE64).regex(/^[A-Za-z0-9+/]*={0,2}$/) }).strict(),
   z.object({ type: z.literal("help.open"), topic: z.enum(["gmail-relay-script", "gmail-relay-manifest", "gmail-relay-guide"]) }).strict(),
   z.object({ type: z.literal("open.message"), messageId: id }).strict(),
   z.object({ type: z.literal("message.load"), messageId: id, refresh: z.boolean().optional() }).strict(),

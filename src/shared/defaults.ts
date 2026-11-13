@@ -33,6 +33,9 @@ export const defaultSettings: Settings = {
   fullAccessByDefault: true,
   autoApprove: true,
   bypassSafety: false,
+  voiceModel: "base",
+  voiceLanguage: "auto",
+  voiceAutoSend: false,
   priorityDomains: [...DEFAULT_PRIORITY_DOMAINS],
   autoFocus: true
 };

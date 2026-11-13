@@ -1,6 +1,6 @@
 import { useRef, useState, type FormEvent, type ReactNode } from "react";
-import { ArrowDownToLine, CalendarDays, Database, FolderOpen, Globe, LoaderCircle, Mail, MessageSquare, Plug, Plus, RefreshCw, ShieldAlert, ShieldCheck, Sparkles, Star, Terminal, Trash2, Wrench, X } from "lucide-react";
-import type { Account, Command, CommandResult, GmailRelayPublicStatus, Provider, Settings, Snapshot } from "../shared/contracts";
+import { ArrowDownToLine, CalendarDays, Database, FolderOpen, Globe, LoaderCircle, Mail, MessageSquare, Mic, Plug, Plus, RefreshCw, ShieldAlert, ShieldCheck, Sparkles, Star, Terminal, Trash2, Wrench, X } from "lucide-react";
+import { VOICE_LANGUAGES, type Account, type Command, type CommandResult, type GmailRelayPublicStatus, type Provider, type Settings, type Snapshot } from "../shared/contracts";
 import { fileSize, formatDate, hostOS, OS_TEXT } from "./utils";
 import { BrowserSetup } from "./BrowserSetup";
 import { FullMailArchive } from "./FullMailArchive";
@@ -424,6 +424,14 @@ function Assistant({ data, run, busy }: Props) {
         ? "On: every command, file change or deletion, web request and calendar invitation runs without asking, including sensitive and destructive ones. Each action is still listed in the chat."
         : "Off: sensitive or destructive actions (system files, credentials, invitations…) wait for your approval. Also available as a button at the top of Chat."}</p></div>
         <FullAccessButton data={data} run={run}/></div>
+      <div className="setting-row compact"><div><strong><Mic size={14}/> Voice instructions</strong><p>Use the microphone button in Chat to speak instead of typing. Speech is transcribed on this computer with Whisper; no audio is sent anywhere. The first use downloads the model once (base about 130 MB, accurate about 450 MB).</p></div>
+        <div className="button-row wrap">
+          <select aria-label="Voice model" value={data.settings.voiceModel} onChange={event => update({ voiceModel: event.target.value === "small" ? "small" : "base" })}>
+            <option value="base">Fast (Whisper base)</option><option value="small">Accurate (Whisper small)</option></select>
+          <select aria-label="Spoken language" value={data.settings.voiceLanguage} onChange={event => update({ voiceLanguage: event.target.value })}>
+            {VOICE_LANGUAGES.map(([code, name]) => <option key={code} value={code}>{name}</option>)}</select>
+          <label className="checkbox-label"><input type="checkbox" checked={data.settings.voiceAutoSend} onChange={event => update({ voiceAutoSend: event.target.checked })}/>Send right after speaking</label>
+        </div></div>
     </section>
   </>;
 }

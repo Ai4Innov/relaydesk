@@ -267,6 +267,12 @@ export interface Settings {
   autoApprove: boolean;
   /** Full access: every assistant action (including sensitive ones and invitations) runs without asking. */
   bypassSafety: boolean;
+  /** Local Whisper model used for spoken instructions. */
+  voiceModel: VoiceModel;
+  /** "auto" detects the spoken language; otherwise an ISO 639-1 code such as "fr". */
+  voiceLanguage: string;
+  /** Send a dictated instruction immediately instead of leaving it in the message box. */
+  voiceAutoSend: boolean;
   /** Organization mail domains ranked first in tasks, focus and AI review, highest priority first. */
   priorityDomains: string[];
   /** Keep tasks and the focus report updated from new mail in the background (uses the AI budget). */
@@ -392,6 +398,7 @@ export type Command =
   | { type: "calendar.approve"; approvalId: string; hash: string }
   | { type: "calendar.openInGoogle"; eventId: string }
   | { type: "help.open"; topic: HelpTopic }
+  | { type: "voice.transcribe"; audio: string }
   | { type: "open.message"; messageId: string }
   | { type: "message.load"; messageId: string; refresh?: boolean }
   | { type: "message.html"; messageId: string }
@@ -409,6 +416,8 @@ export interface CommandResult {
   browserCalendarOutcome?: "saved" | "needs-user" | "uncertain";
   conversationId?: string;
   message?: string;
+  transcript?: string;
+  transcriptLanguage?: string;
   citations?: Citation[];
   answer?: string;
   draftId?: string;
@@ -435,3 +444,5 @@ export const HELP_LINKS = {
   "gmail-relay-guide": `${RELAY_REPO}/README.md#relay-desk-access-web-app--rotatable-token`
 } as const;
 export type HelpTopic = keyof typeof HELP_LINKS;
+export type VoiceModel = "base" | "small";
+export const VOICE_LANGUAGES = [["auto", "Detect automatically"], ["en", "English"], ["fr", "French"], ["es", "Spanish"], ["pt", "Portuguese"], ["de", "German"], ["ar", "Arabic"], ["yo", "Yoruba"]] as const;
