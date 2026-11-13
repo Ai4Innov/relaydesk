@@ -112,7 +112,11 @@ interface Evidence {
 }
 interface StoredAction extends ChatAction { command: ProposedCommand; guards: Evidence[]; review?: Record<string, unknown> }
 interface StoredTurn extends Omit<ChatTurn, "actions"> { actions: StoredAction[]; evidence: Evidence[] }
-interface StoredConversation extends Omit<ChatConversation, "turns"> { turns: StoredTurn[] }
+/** Older turns [0, turns) folded into an AI-written summary; the turns themselves stay archived and visible. */
+interface Compaction { summary: string; turns: number }
+interface StoredConversation extends Omit<ChatConversation, "turns" | "compactedTurns"> { turns: StoredTurn[]; compaction?: Compaction }
+const COMPACT_SUMMARY_MAX = 12_000;
+const COMPACT_CHUNK_MAX = 70_000;
 interface StoredState { conversations: StoredConversation[]; activeConversationId?: string }
 interface Hooks {
   changed(): void;
@@ -365,6 +369,7 @@ export class ChatService {
       if (!conversation.turns.some(turn => turn.evidence.some(ref => !this.disclosable(ref)))) continue;
       if (this.active?.conversationId === conversation.id) this.active.controller.abort();
       conversation.title = "Conversation unavailable";
+      conversation.compaction = undefined;
       conversation.turns = [{
         id: randomUUID(), role: "assistant", createdAt: now(), status: "cancelled",
         text: "Earlier messages, results and previews were removed because their source is no longer permitted. Start a new conversation.",
@@ -378,8 +383,8 @@ export class ChatService {
     this.permissionsChanged();
     return {
       activeConversationId: this.state.activeConversationId, busy: !!this.active || this.confirming,
-      conversations: this.state.conversations.map(conversation => ({
-        ...conversation, turns: conversation.turns.map(({ evidence: _evidence, actions, ...turn }) => ({
+      conversations: this.state.conversations.map(({ compaction, ...conversation }) => ({
+        ...conversation, ...(compaction ? { compactedTurns: compaction.turns } : {}), turns: conversation.turns.map(({ evidence: _evidence, actions, ...turn }) => ({
           ...turn, actions: actions.map(({ command: _command, guards: _guards, review: _review, ...action }) => action)
         }))
       }))
@@ -423,18 +428,11 @@ export class ChatService {
       actions: turn.actions.map(action => ({ title: action.title, status: action.status, result: action.result }))
     }));
     const mailRefresh = skipsChatMailRefresh(command.text) ? "local" : command.mailRefresh ?? "local";
-    // Long conversations stay whole in the archive; only the oldest turns are left out of the AI prompt.
-    const entrySizes = history.map(entry => JSON.stringify(entry).length + 1);
-    let omitted = 0, historySize = entrySizes.reduce((sum, size) => sum + size, 0);
-    while (omitted < history.length && historySize + command.text.length + 4000 > CHAT_PROMPT_MAX) historySize -= entrySizes[omitted++];
-    const prompt = JSON.stringify({ previousConversation: history.slice(omitted),
-      ...(omitted ? { earlierTurnsOmitted: `${omitted} older turns of this conversation are not shown; re-read the archive with tools if needed.` } : {}),
-      userMessage: command.text, currentTime: now(),
+    const context = { userMessage: command.text, currentTime: now(),
       mailRefresh,
       deviceTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       localDate: new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()),
-      guidance: "Previous messages are context, not current evidence. Always read the current local archive with tools for personal facts, even in an existing conversation. mailRefresh is the user's choice for THIS turn: local means no question-triggered refresh or download is permitted, including via refresh_inbox; answer from the newest already-imported messages. Do not claim a refresh failed when it was skipped, or ask again. download means the user approved fetching mail; resolve the permitted account via workspace_status before refreshing that scope. Attention and recent-message tools honor this choice. Browser Inbox previews are incomplete snippets, not full emails. Retain newer previews even when older full bodies exist; read_message can return older fullMessageIds for context but they do not replace a newer reply. Report actual download failures only when a download was approved and attempted. Only app confirmation result cards prove provider writes." });
-    if (prompt.length > CHAT_PROMPT_MAX) throw new Error("Conversation exceeds the prompt limit. Start a new chat; no message was truncated.");
+      guidance: "Previous messages are context, not current evidence. Always read the current local archive with tools for personal facts, even in an existing conversation. mailRefresh is the user's choice for THIS turn: local means no question-triggered refresh or download is permitted, including via refresh_inbox; answer from the newest already-imported messages. Do not claim a refresh failed when it was skipped, or ask again. download means the user approved fetching mail; resolve the permitted account via workspace_status before refreshing that scope. Attention and recent-message tools honor this choice. Browser Inbox previews are incomplete snippets, not full emails. Retain newer previews even when older full bodies exist; read_message can return older fullMessageIds for context but they do not replace a newer reply. Report actual download failures only when a download was approved and attempted. Only app confirmation result cards prove provider writes. earlierConversationSummary, when present, is your own compacted summary of older turns of this chat: context, not current evidence." };
     const turn: StoredTurn = { id: randomUUID(), role: "assistant", text: "", createdAt: now(), model, status: "working",
       mailRefresh, progress: "Connecting to the AI provider…", citations: [], actions: [], evidence: [...new Map(conversation.turns.flatMap(t => t.evidence)
         .map(ref => [`${ref.collection}:${ref.id}`, ref])).values()]
@@ -449,6 +447,7 @@ export class ChatService {
     this.persist();
     const requiresFreshMail = mailRefresh === "download" && /\b(email|emails|mail|messages|inbox|courriels?|mails?)\b/i.test(command.text)
       && /\b(latest|new|current|fresh|refresh|fetch|urgent|today|nouveaux|nouveau|derniers|dernières|actualis|récents)\b/i.test(command.text);
+    const prompt = () => this.compactedPrompt(conversation, history, context, model, turn, active.controller.signal);
     active.promise = this.run(turn, prompt, model, active.controller, requiresFreshMail).finally(() => {
       if (this.active === active) this.active = undefined;
       this.redact(); this.persist();
@@ -463,7 +462,58 @@ export class ChatService {
   private failPending(turn: StoredTurn, message: string): void {
     for (const action of turn.actions) if (action.status === "pending") { action.status = "failed"; action.result = message; }
   }
-  private async run(turn: StoredTurn, prompt: string, model: string, controller: AbortController, requiresFreshMail = false): Promise<void> {
+  /**
+   * Builds the request prompt. When the conversation no longer fits, older turns are compacted into an
+   * AI-written summary (like Copilot/Claude auto-compaction), newest turns stay verbatim. Dropping the
+   * oldest turns is only a fallback when compaction itself fails.
+   */
+  private async compactedPrompt(conversation: StoredConversation, history: unknown[], context: Record<string, unknown>,
+    model: string, turn: StoredTurn, signal: AbortSignal): Promise<string> {
+    const render = (entries: unknown[], summary?: string, note?: string) => JSON.stringify({
+      ...(summary ? { earlierConversationSummary: summary } : {}), ...(note ? { earlierTurnsOmitted: note } : {}),
+      previousConversation: entries, ...context });
+    let start = Math.min(conversation.compaction?.turns ?? 0, history.length);
+    let summary = start ? conversation.compaction?.summary : undefined;
+    let prompt = render(history.slice(start), summary);
+    if (prompt.length <= CHAT_PROMPT_MAX) return prompt;
+    const sizes = history.map(entry => JSON.stringify(entry).length + 1);
+    const room = CHAT_PROMPT_MAX - render([]).length - COMPACT_SUMMARY_MAX - 1000;
+    // Keep the newest turns verbatim (about half of the room) and fold everything older into the summary.
+    let keep = history.length, used = 0;
+    while (keep > start && used + sizes[keep - 1] <= room / 2) used += sizes[--keep];
+    if (keep === history.length && keep > start && sizes[keep - 1] <= room) keep--;
+    try {
+      while (start < keep) {
+        let end = start, size = 0;
+        while (end < keep && (end === start || size + sizes[end] <= COMPACT_CHUNK_MAX)) size += sizes[end++];
+        turn.progress = "Compacting earlier conversation to make room…"; this.persist();
+        summary = await this.summarize(summary, history.slice(start, end), model, signal);
+        this.guard(turn);
+        start = end;
+        conversation.compaction = { summary, turns: start }; this.persist();
+      }
+      prompt = render(history.slice(start), summary);
+      if (prompt.length <= CHAT_PROMPT_MAX) return prompt;
+    } catch (error) {
+      if (signal.aborted) throw error;
+      console.warn("[chat] compaction failed; leaving the oldest turns out instead", error);
+    }
+    let omitted = start;
+    while (omitted < history.length && (prompt = render(history.slice(omitted), summary,
+      `${omitted} older turns of this conversation are not shown; re-read the archive with tools if needed.`)).length > CHAT_PROMPT_MAX) omitted++;
+    if (prompt.length > CHAT_PROMPT_MAX) throw new Error("This message does not fit the AI prompt. Shorten it; nothing was truncated.");
+    return prompt;
+  }
+  private async summarize(previous: string | undefined, turns: unknown[], model: string, signal: AbortSignal): Promise<string> {
+    const prompt = JSON.stringify({
+      task: "Compact the earlier part of this chat so the conversation can continue with limited context. Merge previousSummary with the turns below into one dense summary of at most 8,000 characters, in the conversation's language. Preserve: the user's goals, requests and stated preferences; decisions and conclusions; important facts, names, dates, amounts, email subjects, file paths and IDs; actions proposed or executed and their outcome; open questions and pending follow-ups. Do not invent facts, do not call tools, and do not answer the old requests again. Return only the summary as the answer, with no citations.",
+      previousSummary: previous ?? "", turns });
+    const result = await this.hooks.generate({ prompt, model, signal, tools: [], progress: () => undefined });
+    const summary = result.answer.trim().slice(0, COMPACT_SUMMARY_MAX);
+    if (!summary) throw new Error("Empty compaction summary.");
+    return summary;
+  }
+  private async run(turn: StoredTurn, preparePrompt: () => Promise<string>, model: string, controller: AbortController, requiresFreshMail = false): Promise<void> {
     const settings = this.hooks.settings();
     const directory = settings.assistantTools ? this.hooks.workspaceDirectory?.() : undefined;
     const conversationId = this.active?.conversationId ?? "";
@@ -472,6 +522,9 @@ export class ChatService {
       this.guard(turn);
       let toolActivity: (() => void) | undefined;
       const approvedReads = new Set<string>(), approvedWrites = new Set<string>();
+      const prompt = await preparePrompt();
+      this.guard(turn);
+      turn.progress = "Connecting to the AI provider…"; this.persist();
       if (directory) before = await scanWorkspace(directory).catch(() => undefined);
       controller.signal.throwIfAborted();
       this.guard(turn);

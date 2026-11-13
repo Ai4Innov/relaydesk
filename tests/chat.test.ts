@@ -90,20 +90,44 @@ describe("chat agent tools, consent and encrypted checkpoint state", () => {
     await f.send("Help me");
     expect(f.chat.snapshot().conversations).toHaveLength(26);
   });
-  it("keeps long conversations going by leaving only the oldest turns out of the prompt", async () => {
+  const longChat = async (summarize: (prompt: { previousSummary: string; turns: { text: string }[] }) => string) => {
     const f = fixture();
-    f.hooks.generate.mockResolvedValue({ answer: "A".repeat(9000), citationIds: [] });
-    await f.send("first question");
+    f.hooks.generate.mockImplementation(async request => {
+      const prompt = JSON.parse(request.prompt);
+      if (String(prompt.task ?? "").startsWith("Compact the earlier part")) {
+        expect(request.tools).toEqual([]);
+        return { answer: summarize(prompt), citationIds: [] };
+      }
+      return { answer: "A".repeat(9000), citationIds: [] };
+    });
+    await f.send("first question: budget for Finco is 42k");
     const id = f.chat.snapshot().activeConversationId!;
     for (let index = 0; index < 34; index++) await f.send(`question ${index}`, id);
     const conversation = f.chat.snapshot().conversations.find(c => c.id === id)!;
     expect(conversation.turns).toHaveLength(70);
-    expect(conversation.turns.at(-1)!.status).toBe("complete");
-    const prompt = JSON.parse(f.hooks.generate.mock.calls.at(-1)![0].prompt);
-    expect(prompt.earlierTurnsOmitted).toMatch(/older turns/);
-    expect(JSON.stringify(prompt).length).toBeLessThanOrEqual(100_000);
-    expect(prompt.previousConversation.at(-1).text).toBe("A".repeat(9000));
-    expect(JSON.stringify(prompt.previousConversation)).not.toContain("first question");
+    expect(conversation.turns.every(turn => turn.status === "complete")).toBe(true);
+    const requests = f.hooks.generate.mock.calls.map(call => JSON.parse(call[0].prompt));
+    return { conversation, requests, last: requests.at(-1)!, compactions: requests.filter(r => r.task) };
+  };
+  it("auto-compacts older turns into a summary instead of failing or dropping them", async () => {
+    const { conversation, last, compactions } = await longChat(prompt =>
+      `${prompt.previousSummary} ${prompt.turns.filter(t => t.text.startsWith("first") || t.text.startsWith("question")).map(t => t.text).join("; ")}`.trim());
+    expect(last.earlierConversationSummary).toContain("budget for Finco is 42k");
+    expect(last.earlierTurnsOmitted).toBeUndefined();
+    expect(JSON.stringify(last).length).toBeLessThanOrEqual(100_000);
+    expect(last.previousConversation.at(-1).text).toBe("A".repeat(9000));
+    expect(JSON.stringify(last.previousConversation)).not.toContain("first question");
+    // The summary is reused and extended: later compactions never re-read the first turns.
+    expect(compactions.length).toBeGreaterThan(1);
+    expect(compactions.slice(1).every(c => c.previousSummary && !JSON.stringify(c.turns).includes("first question"))).toBe(true);
+    expect(conversation.compactedTurns).toBeGreaterThan(0);
+    expect(conversation.turns[0].text).toContain("first question");
+  });
+  it("falls back to leaving the oldest turns out when compaction fails", async () => {
+    const { last } = await longChat(() => { throw new Error("model unavailable"); });
+    expect(last.earlierConversationSummary).toBeUndefined();
+    expect(last.earlierTurnsOmitted).toMatch(/older turns/);
+    expect(JSON.stringify(last).length).toBeLessThanOrEqual(100_000);
   });
   it("does not publish a claimed latest-inbox answer without any actual freshness attempt", async () => {
     const f = fixture();

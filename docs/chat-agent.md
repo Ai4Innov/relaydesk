@@ -125,7 +125,7 @@ Shutdown cancels pending chat work. Recovery marks interrupted turns cancelled a
 
 ## Bounded behavior
 
-- Unlimited conversations, turns, evidence and tool-argument sizes. When a long conversation no longer fits the AI prompt, its oldest turns are left out of the prompt (they stay in the archive) instead of failing.
+- Unlimited conversations, turns, evidence and tool-argument sizes. When a long conversation no longer fits the AI prompt, it is **auto-compacted** like Copilot/Claude: the selected model summarizes older turns (goals, decisions, facts, names, dates, IDs, actions and open follow-ups), the newest turns stay verbatim, and the summary is reused and extended on later requests. All turns stay in the encrypted archive and visible in Chat, with a divider marking where compaction applies. The summary is redacted with the conversation if a source loses permission. Only if compaction fails are the oldest turns left out of the prompt.
 - 12,000 characters per user message; 100,000 characters for the complete submitted history/prompt. Oversized input is rejected, **not silently truncated**. Conversation titles are short display labels; the original user message remains intact.
 - No cap on the number of tool calls or agent rounds per answer; six proposal cards per assistant turn. Long runs are bounded only by the inactivity timeout below.
 - 16,000 characters of tool arguments or exact action preview. A tool response over 24,000 characters is withheld, and the agent is asked for a smaller page. Once 320,000 characters of tool results have been gathered, further evidence is withheld and the agent answers from what it has, stating that coverage was limited. Neither case fails the answer.

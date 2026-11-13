@@ -65,6 +65,8 @@ export interface ChatConversation {
   title: string;
   updatedAt: string;
   turns: ChatTurn[];
+  /** The first N turns are only sent to the AI as a compacted summary (they stay visible here). */
+  compactedTurns?: number;
   /** Shell/web approvals granted with "Allow for this response"; cleared when the next request starts. */
   grants?: ("shell" | "url" | "read")[];
 }
