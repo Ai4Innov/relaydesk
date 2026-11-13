@@ -101,6 +101,7 @@ const actionTitles: Record<typeof allowedActions[number], string> = {
   "task.schedule": "Schedule a private task event", "browser.calendar.move": "Move meeting in Google Calendar"
 };
 type ProposedCommand = Extract<Command, { type: typeof allowedActions[number] }>;
+const evidenceIndex = new WeakMap<StoredTurn, Map<string, Evidence>>();
 interface Evidence {
   collection: Collection;
   id: string;
@@ -241,11 +242,16 @@ export class ChatService {
       ? this.vault.get<Message | Attachment>(collection, id)?.gmailApi : undefined;
     const ref = { collection, id, accountId, sourceId, revision: this.revision(collection, id), gmailApi: origin };
     if (!this.valid(ref)) throw new Error("This source is unavailable or not permitted for AI.");
-    if (!turn.evidence.some(e => e.collection === collection && e.id === id)) {
-      if (turn.evidence.length >= 1000) this.limit("Chat evidence limit (1,000 dependencies) reached. Start a narrower conversation.");
+    let index = evidenceIndex.get(turn);
+    if (!index || index.size !== turn.evidence.length) {
+      index = new Map(turn.evidence.map(e => [`${e.collection}:${e.id}`, e]));
+      evidenceIndex.set(turn, index);
+    }
+    const existing = index.get(`${collection}:${id}`);
+    if (!existing) {
       turn.evidence.push(ref);
+      index.set(`${collection}:${id}`, ref);
     } else {
-      const existing = turn.evidence.find(e => e.collection === collection && e.id === id)!;
       // Prior turns carry permission dependencies, not a claim that old evidence is current.
       if (!existing.revision) existing.revision = ref.revision;
     }
@@ -412,13 +418,18 @@ export class ChatService {
     if (!model) throw new Error("Connect your AI provider and select a model in Settings.");
     const conversation = command.conversationId ? this.state.conversations.find(c => c.id === command.conversationId) : this.newConversation();
     if (!conversation) throw new Error("Conversation not found.");
-    if (conversation.turns.length >= 60) throw new Error("This conversation reached its 60-turn limit. Start a new chat.");
     const history = conversation.turns.map(turn => ({
       role: turn.role, text: turn.text, status: turn.status,
       actions: turn.actions.map(action => ({ title: action.title, status: action.status, result: action.result }))
     }));
     const mailRefresh = skipsChatMailRefresh(command.text) ? "local" : command.mailRefresh ?? "local";
-    const prompt = JSON.stringify({ previousConversation: history, userMessage: command.text, currentTime: now(),
+    // Long conversations stay whole in the archive; only the oldest turns are left out of the AI prompt.
+    const entrySizes = history.map(entry => JSON.stringify(entry).length + 1);
+    let omitted = 0, historySize = entrySizes.reduce((sum, size) => sum + size, 0);
+    while (omitted < history.length && historySize + command.text.length + 4000 > CHAT_PROMPT_MAX) historySize -= entrySizes[omitted++];
+    const prompt = JSON.stringify({ previousConversation: history.slice(omitted),
+      ...(omitted ? { earlierTurnsOmitted: `${omitted} older turns of this conversation are not shown; re-read the archive with tools if needed.` } : {}),
+      userMessage: command.text, currentTime: now(),
       mailRefresh,
       deviceTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       localDate: new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()),
@@ -592,13 +603,12 @@ export class ChatService {
         checkedAt: now(), sources: results.flatMap(result => result.sources),
         limitation: "Freshness covers the selected inbox view and reported downloaded messages, not invisible mailbox history. Partial or unavailable sources are not current evidence." };
     };
-    const tool = <S extends z.ZodTypeAny>(name: string, description: string, schema: S, work: (args: z.output<S>) => Promise<unknown> | unknown, maxArgs = 16000): Tool => ({
+    const tool = <S extends z.ZodTypeAny>(name: string, description: string, schema: S, work: (args: z.output<S>) => Promise<unknown> | unknown): Tool => ({
       name, description, parameters: toolParameters(schema), skipPermission: true, defer: "never",
       handler: async args => {
         this.guard(turn);
         turn.progress = description; this.persist();
         try {
-          if (JSON.stringify(args).length > maxArgs) this.limit(`Chat tool argument limit (${maxArgs.toLocaleString("en-US")} characters) exceeded. Ask for a smaller operation.`);
           const result = await work(schema.parse(args));
           this.guard(turn);
           const admission = outputBudget.admit(result);
@@ -993,7 +1003,7 @@ export class ChatService {
         this.addFile(turn, created.path, created.size);
         return { saved: true, path: created.path, fileName: created.name, format: created.format, bytes: created.size,
           note: "The app shows Open and Show in folder buttons for this file. Mention the saved path in your answer." };
-      }, 220000));
+      }));
     }
     return tools;
   }

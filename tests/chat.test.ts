@@ -90,6 +90,21 @@ describe("chat agent tools, consent and encrypted checkpoint state", () => {
     await f.send("Help me");
     expect(f.chat.snapshot().conversations).toHaveLength(26);
   });
+  it("keeps long conversations going by leaving only the oldest turns out of the prompt", async () => {
+    const f = fixture();
+    f.hooks.generate.mockResolvedValue({ answer: "A".repeat(9000), citationIds: [] });
+    await f.send("first question");
+    const id = f.chat.snapshot().activeConversationId!;
+    for (let index = 0; index < 34; index++) await f.send(`question ${index}`, id);
+    const conversation = f.chat.snapshot().conversations.find(c => c.id === id)!;
+    expect(conversation.turns).toHaveLength(70);
+    expect(conversation.turns.at(-1)!.status).toBe("complete");
+    const prompt = JSON.parse(f.hooks.generate.mock.calls.at(-1)![0].prompt);
+    expect(prompt.earlierTurnsOmitted).toMatch(/older turns/);
+    expect(JSON.stringify(prompt).length).toBeLessThanOrEqual(100_000);
+    expect(prompt.previousConversation.at(-1).text).toBe("A".repeat(9000));
+    expect(JSON.stringify(prompt.previousConversation)).not.toContain("first question");
+  });
   it("does not publish a claimed latest-inbox answer without any actual freshness attempt", async () => {
     const f = fixture();
     f.hooks.generate.mockResolvedValue({ answer: "I fetched the latest inbox and everything is complete.", citationIds: [] });

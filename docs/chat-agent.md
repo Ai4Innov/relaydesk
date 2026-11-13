@@ -125,7 +125,7 @@ Shutdown cancels pending chat work. Recovery marks interrupted turns cancelled a
 
 ## Bounded behavior
 
-- Unlimited conversations; 60 turns per conversation (user and assistant turns both count).
+- Unlimited conversations, turns, evidence and tool-argument sizes. When a long conversation no longer fits the AI prompt, its oldest turns are left out of the prompt (they stay in the archive) instead of failing.
 - 12,000 characters per user message; 100,000 characters for the complete submitted history/prompt. Oversized input is rejected, **not silently truncated**. Conversation titles are short display labels; the original user message remains intact.
 - No cap on the number of tool calls or agent rounds per answer; six proposal cards per assistant turn. Long runs are bounded only by the inactivity timeout below.
 - 16,000 characters of tool arguments or exact action preview. A tool response over 24,000 characters is withheld, and the agent is asked for a smaller page. Once 320,000 characters of tool results have been gathered, further evidence is withheld and the agent answers from what it has, stating that coverage was limited. Neither case fails the answer.
