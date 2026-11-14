@@ -85,12 +85,14 @@ export interface ChatState {
   conversations: ChatConversation[];
   activeConversationId?: string;
   busy: boolean;
+  /** Conversations with a request in progress (several can run in parallel). */
+  running?: string[];
 }
 export type ChatCommand =
   | { type: "chat.new" }
   | { type: "chat.send"; conversationId?: string; text: string; model?: string; mailRefresh?: ChatMailRefresh }
   | { type: "chat.confirm"; conversationId: string; turnId: string; actionId: string }
-  | { type: "chat.cancel" }
+  | { type: "chat.cancel"; conversationId?: string }
   | { type: "chat.delete"; conversationId: string }
   | { type: "chat.permission"; conversationId: string; turnId: string; requestId: string; decision: "once" | "chat" | "deny" }
   | { type: "chat.openFile"; conversationId: string; turnId: string; path: string; reveal?: boolean };

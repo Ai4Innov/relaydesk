@@ -33,7 +33,8 @@ export class ClaudeAdapter implements AiProvider {
   models: ModelInfo[] = [];
   private client?: ClaudeClient;
   private clientKey?: string;
-  private busy = false;
+  /** Requests in flight; chats may run in parallel, one-shot generation waits for none. */
+  private busy = 0;
   private controllers = new Set<AbortController>();
   constructor(private apiKey: () => string | undefined, private changed: () => void, private factory: ClientFactory = defaultFactory) {}
 
@@ -73,7 +74,7 @@ export class ClaudeAdapter implements AiProvider {
   }
   async generate(task: string, citations: Citation[], model: string): Promise<AgentResponse> {
     if (this.busy) throw new Error("Another Claude request is running. Wait for it to finish.");
-    this.busy = true;
+    this.busy++;
     const controller = new AbortController();
     this.controllers.add(controller);
     try {
@@ -86,13 +87,12 @@ export class ClaudeAdapter implements AiProvider {
       const parsed = parseAgentResponse(text);
       if (parsed.citationIds.some(id => !allowed.has(id))) throw new Error("Claude cited evidence outside this request. Regenerate the response.");
       return parsed;
-    } finally { this.controllers.delete(controller); this.busy = false; }
+    } finally { this.controllers.delete(controller); this.busy--; }
   }
   async chat(request: ChatAgentRequest): Promise<AgentResponse> {
     if (request.prompt.length > CHAT_PROMPT_MAX) throw new Error("Conversation is too long. Start a new chat; no message was truncated.");
-    if (this.busy) throw new Error("Another Claude request is running. Wait for it to finish.");
     request.signal.throwIfAborted();
-    this.busy = true;
+    this.busy++;
     const controller = new AbortController();
     this.controllers.add(controller);
     let timeoutError: ChatTimeoutError | undefined;
@@ -146,7 +146,7 @@ export class ClaudeAdapter implements AiProvider {
       unsubscribe?.();
       request.signal.removeEventListener("abort", forward);
       this.controllers.delete(controller);
-      this.busy = false;
+      this.busy--;
     }
   }
   async stop(): Promise<void> {

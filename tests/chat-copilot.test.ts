@@ -63,16 +63,17 @@ describe("isolated SDK chat agent (offline)", () => {
     expect(runtime.disconnect).toHaveBeenCalledOnce();
     await adapter.stop();
   });
-  it("cancels only its captured SDK session and releases its busy gate", async () => {
+  it("runs chats in parallel and cancels only the captured SDK session", async () => {
     const adapter = new CopilotAdapter(".", vi.fn());
     const controller = new AbortController();
     runtime.send.mockImplementationOnce(() => new Promise(() => {}));
     const running = adapter.chat(request(controller.signal));
     await vi.waitFor(() => expect(runtime.send).toHaveBeenCalled());
-    await expect(adapter.chat(request())).rejects.toThrow("Another");
+    await expect(adapter.chat(request())).resolves.toMatchObject({ answer: "Hello" });
+    expect(runtime.create).toHaveBeenCalledTimes(2);
     const outcome = expect(running).rejects.toThrow("cancelled");
     controller.abort(); await outcome;
-    expect(runtime.abort).toHaveBeenCalled(); expect(runtime.disconnect).toHaveBeenCalledOnce();
+    expect(runtime.disconnect).toHaveBeenCalledTimes(2);
     await expect(adapter.chat(request())).resolves.toHaveProperty("answer");
     await adapter.stop();
   });

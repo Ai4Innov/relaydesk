@@ -106,7 +106,8 @@ export class CodexAdapter implements AiProvider {
   status: Snapshot["copilot"] = { status: "disconnected", message: "Connect your signed-in Codex CLI (ChatGPT plan). No API key is used." };
   models: ModelInfo[] = [];
   private binary?: string;
-  private busy = false;
+  /** Requests in flight; chats may run in parallel, one-shot generation waits for none. */
+  private busy = 0;
   private children = new Set<ReturnType<Spawner>>();
   constructor(private workingDirectory: string, private configuredPath: () => string, private changed: () => void,
     private spawner: Spawner = nodeSpawn) {}
@@ -223,7 +224,7 @@ export class CodexAdapter implements AiProvider {
   }
   async generate(task: string, citations: Citation[], model: string): Promise<AgentResponse> {
     if (this.busy) throw new Error("Another Codex request is running. Wait for it to finish.");
-    this.busy = true;
+    this.busy++;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(new Error("Codex timed out.")), 180_000);
     try {
@@ -232,13 +233,12 @@ export class CodexAdapter implements AiProvider {
       const parsed = parseAgentResponse(await this.exec(`${GENERATE_INSTRUCTIONS}\n\n${prompt}`, model, { signal: controller.signal }));
       if (parsed.citationIds.some(id => !allowed.has(id))) throw new Error("Codex cited evidence outside this request. Regenerate the response.");
       return parsed;
-    } finally { clearTimeout(timer); this.busy = false; }
+    } finally { clearTimeout(timer); this.busy--; }
   }
   async chat(request: ChatAgentRequest): Promise<AgentResponse> {
     if (request.prompt.length > CHAT_PROMPT_MAX) throw new Error("Conversation is too long. Start a new chat; no message was truncated.");
-    if (this.busy) throw new Error("Another Codex request is running. Wait for it to finish.");
     request.signal.throwIfAborted();
-    this.busy = true;
+    this.busy++;
     const controller = new AbortController();
     let timeoutError: ChatTimeoutError | undefined;
     const timers = new ChatTimers(reason => { timeoutError = new ChatTimeoutError(reason); controller.abort(timeoutError); });
@@ -273,7 +273,7 @@ export class CodexAdapter implements AiProvider {
       unsubscribe?.();
       request.signal.removeEventListener("abort", forward);
       await bridge?.close();
-      this.busy = false;
+      this.busy--;
     }
   }
   async stop(): Promise<void> {

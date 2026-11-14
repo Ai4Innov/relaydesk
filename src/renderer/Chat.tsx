@@ -133,7 +133,18 @@ export function Chat({ data, run, navigate }: ChatProps) {
   const nearBottom = useRef(true);
   const requestLock = useRef(false);
   const reconnectAttempted = useRef(false);
-  const chatBusy = data.chat?.busy ?? false;
+  // Conversations run in parallel: only the selected one's request blocks its own composer.
+  const running = data.chat?.running ?? (data.chat?.busy && conversation ? [conversation.id] : []);
+  const chatBusy = conversation ? running.includes(conversation.id) : !data.chat?.running && !!data.chat?.busy;
+  const othersRunning = running.filter(id => id !== conversation?.id).length;
+  const [finishedUnseen, setFinishedUnseen] = useState<string[]>([]);
+  const wasRunning = useRef<string[]>([]);
+  const runningKey = running.join(",");
+  useEffect(() => {
+    const done = wasRunning.current.filter(id => !running.includes(id) && id !== selected);
+    if (done.length) setFinishedUnseen(previous => [...new Set([...previous, ...done])]);
+    wasRunning.current = running;
+  }, [runningKey]);
   const guide = useSetupGuide(data);
   const onboarding = guide.visible && !conversation?.turns.length;
   const blocked = chatBusy || requestPending;
@@ -177,6 +188,7 @@ export function Chat({ data, run, navigate }: ChatProps) {
   const choose = (id: string) => {
     dismissRefresh();
     nearBottom.current = true; setNewMessages(false); setSelected(id); setDeleteId(""); setError("");
+    setFinishedUnseen(previous => previous.filter(item => item !== id));
   };
   const scrollToLatest = () => {
     nearBottom.current = true; setNewMessages(false);
@@ -241,7 +253,7 @@ export function Chat({ data, run, navigate }: ChatProps) {
     void submitQuestion(pendingQuestion, mailRefresh);
   };
   const newChat = async () => {
-    if (blocked || requestLock.current) return;
+    if (requestPending || requestLock.current) return;
     dismissRefresh();
     requestLock.current = true; setRequestPending(true); setError("");
     try {
@@ -252,7 +264,7 @@ export function Chat({ data, run, navigate }: ChatProps) {
     finally { requestLock.current = false; setRequestPending(false); composer.current?.focus(); }
   };
   const deleteChat = async () => {
-    if (!deleteId || blocked || requestLock.current) return;
+    if (!deleteId || requestPending || running.includes(deleteId) || requestLock.current) return;
     dismissRefresh();
     const id = deleteId;
     requestLock.current = true; setRequestPending(true); setError("");
@@ -269,15 +281,23 @@ export function Chat({ data, run, navigate }: ChatProps) {
 
   return <section className="chat-shell" aria-label="Assistant chat workspace">
     <aside className="chat-history" aria-label="Conversation history">
-      <div className="chat-history-heading"><span className="eyebrow">YOUR CONVERSATIONS</span><button className="icon-button" aria-label="New chat" title="New chat" disabled={blocked} onClick={() => void newChat()}><Plus size={19}/></button></div>
+      <div className="chat-history-heading"><span className="eyebrow">YOUR CONVERSATIONS</span><button className="icon-button" aria-label="New chat" title="New chat" disabled={requestPending} onClick={() => void newChat()}><Plus size={19}/></button></div>
       <div className="chat-history-list">
         {!conversations.length && <p className="chat-history-empty">A little less searching.<br/>A little more doing.<br/><span>Your conversations will live here.</span></p>}
-        {[...conversations].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(item => <div className={`chat-history-item ${selected === item.id ? "selected" : ""}`} key={item.id}>
-          <button className="chat-history-select" title={item.title} aria-current={selected === item.id ? "true" : undefined} onClick={() => choose(item.id)}><MessageSquare size={15}/><span>{item.title || "New conversation"}</span></button>
-          <button className="icon-button" aria-label={`Delete conversation ${item.title || "New conversation"}`} disabled={blocked} onClick={() => setDeleteId(item.id)}><Trash2 size={14}/></button>
-        </div>)}
+        {[...conversations].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(item => {
+          const working = running.includes(item.id), fresh = !working && finishedUnseen.includes(item.id);
+          const last = item.turns.at(-1);
+          const state = working ? "running" : fresh ? "finished" : last?.status === "error" ? "failed" : "idle";
+          const label = { running: "Working…", finished: "Finished · new answer", failed: "Stopped with an error", idle: "" }[state];
+          return <div className={`chat-history-item ${selected === item.id ? "selected" : ""} chat-session-${state}`} key={item.id} data-session={state}>
+          <button className="chat-history-select" title={label ? `${item.title} · ${label}` : item.title} aria-current={selected === item.id ? "true" : undefined} aria-busy={working || undefined} onClick={() => choose(item.id)}>
+            <span className="chat-session-icon" aria-hidden="true">{working ? <LoaderCircle size={15} className="spin"/> : fresh ? <CheckCheck size={15}/> : state === "failed" ? <CircleAlert size={15}/> : <MessageSquare size={15}/>}</span>
+            <span className="chat-session-text"><span>{item.title || "New conversation"}</span>{label && <small>{label}</small>}</span>
+          </button>
+          <button className="icon-button" aria-label={`Delete conversation ${item.title || "New conversation"}`} disabled={requestPending || working} onClick={() => setDeleteId(item.id)}><Trash2 size={14}/></button>
+        </div>; })}
       </div>
-      {deleteId && <div className="chat-delete-confirm" role="group" aria-label="Confirm conversation deletion"><strong>Delete this conversation?</strong><p>Its saved messages and previews will be removed. Completed actions are not undone.</p><div className="button-row"><button className="small secondary" disabled={requestPending} onClick={() => setDeleteId("")}>Keep chat</button><button className="small" disabled={blocked} onClick={() => void deleteChat()}>Delete chat</button></div></div>}
+      {deleteId && <div className="chat-delete-confirm" role="group" aria-label="Confirm conversation deletion"><strong>Delete this conversation?</strong><p>Its saved messages and previews will be removed. Completed actions are not undone.</p><div className="button-row"><button className="small secondary" disabled={requestPending} onClick={() => setDeleteId("")}>Keep chat</button><button className="small" disabled={requestPending || running.includes(deleteId)} onClick={() => void deleteChat()}>Delete chat</button></div></div>}
       <div className="chat-history-footer"><ShieldCheck size={15}/><span>Saved in your encrypted local archive.</span></div>
     </aside>
     <div className="chat-main">
@@ -321,7 +341,7 @@ export function Chat({ data, run, navigate }: ChatProps) {
       </div>
       {newMessages && <button className="chat-latest secondary small" onClick={scrollToLatest}><ArrowDown size={14}/>Jump to latest</button>}
       <div className="chat-composer-area">
-        {chatBusy && !conversation?.turns.some(turn => turn.status === "working") && <p className="chat-progress" role="status"><LoaderCircle size={14} className="spin"/>{ai.name} is working in another conversation.</p>}
+        {othersRunning > 0 && <p className="chat-progress chat-parallel" role="status"><LoaderCircle size={14} className="spin"/>{othersRunning === 1 ? "1 other conversation is" : `${othersRunning} other conversations are`} still working. You can keep chatting here.</p>}
         {error && <div className="chat-local-error" role="alert"><CircleAlert size={15}/><span>{error}</span><button className="icon-button" aria-label="Dismiss chat error" onClick={() => setError("")}><X size={14}/></button></div>}
         {pendingQuestion && <section className="chat-refresh-choice" role="group" aria-labelledby="chat-refresh-title" aria-describedby="chat-refresh-description" onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); cancelRefresh(); } }}>
           <div className="chat-refresh-heading"><span className="chat-refresh-icon"><Download size={19}/></span><div><span className="eyebrow">YOUR CHOICE · THIS QUESTION ONLY</span><h2 id="chat-refresh-title">Do you want to download latest messages before I answer?</h2></div></div>
@@ -338,7 +358,7 @@ export function Chat({ data, run, navigate }: ChatProps) {
           <div className="chat-composer-toolbar">
             <label className="model-select"><Sparkles size={14}/><span className="sr-only">Chat model</span><select aria-label="Chat model" value={model} disabled={!data.models.length} onChange={event => { dismissRefresh(); setModel(event.target.value); }}><option value="">{data.models.length ? "Choose a model" : "Connect for available models"}</option>{model && !availableModel && <option value={model} disabled>Unavailable: {model}</option>}{data.models.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
             <div className="button-row"><VoiceButton run={run} disabled={requestPending} autoSend={data.settings.voiceAutoSend} onTranscript={dictated} onError={setError}/>{chatBusy
-              ? <button key="stop" type="button" className="secondary small" disabled={requestPending} onClick={event => { event.preventDefault(); void run({ type: "chat.cancel" }); }}><Square size={13}/>Stop response</button>
+              ? <button key="stop" type="button" className="secondary small" disabled={requestPending} onClick={event => { event.preventDefault(); void run({ type: "chat.cancel", conversationId: conversation?.id }); }}><Square size={13}/>Stop response</button>
               : <button key="send" type="submit" aria-label="Send message" className="chat-send" disabled={!canSend || !!pendingQuestion}>{requestPending ? <LoaderCircle size={17} className="spin"/> : <ArrowUp size={18}/>}</button>}
             </div>
           </div>

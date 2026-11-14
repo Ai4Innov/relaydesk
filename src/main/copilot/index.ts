@@ -94,9 +94,10 @@ export class CopilotAdapter implements AiProvider {
   status: Snapshot["copilot"] = { status: "disconnected", message: "Connect your signed-in Copilot subscription. No AI-provider API key is used." };
   models: ModelInfo[] = [];
   private client?: CopilotClient;
-  private active?: CopilotSession;
+  private sessions = new Set<CopilotSession>();
   private connecting?: Promise<void>;
-  private busy = false;
+  /** Requests in flight; chats may run in parallel, one-shot generation waits for none. */
+  private busy = 0;
   constructor(private workingDirectory: string, private changed: () => void) {}
 
   connect(): Promise<void> {
@@ -133,20 +134,21 @@ export class CopilotAdapter implements AiProvider {
     if (!model) throw new Error("Choose a Copilot model first.");
     if (this.status.status !== "ready") await this.connect();
     if (!this.client || !this.models.some(item => item.id === model)) throw new Error("The selected model is not available. Choose another explicitly.");
-    this.busy = true;
+    this.busy++;
     const fs = new MemorySessionFs();
+    let session: CopilotSession | undefined;
     try {
-      this.active = await this.client.createSession(isolatedSessionConfig(model, this.workingDirectory, fs));
-      await this.active.rpc.options.update({ installedPlugins: [] });
+      session = await this.client.createSession(isolatedSessionConfig(model, this.workingDirectory, fs));
+      this.sessions.add(session);
+      await session.rpc.options.update({ installedPlugins: [] });
       const { prompt, allowed } = generationPrompt(task, citations);
-      const response = await this.active.sendAndWait({ prompt }, 120000);
+      const response = await session.sendAndWait({ prompt }, 120000);
       if (!response?.data.content) throw new Error("Copilot returned no answer.");
       const parsed = parseAgentResponse(response.data.content);
       if (parsed.citationIds.some(id => !allowed.has(id))) throw new Error("Copilot cited evidence outside this request. Regenerate the response.");
       return parsed;
     } finally {
-      const session = this.active;
-      this.active = undefined;
+      if (session) this.sessions.delete(session);
       try {
         if (session) {
           try { await session.abort(); }
@@ -155,16 +157,15 @@ export class CopilotAdapter implements AiProvider {
       } finally {
         // deleteSession targets disk state; these sessions use only our memory provider.
         fs.clear();
-        this.busy = false;
+        this.busy--;
       }
     }
   }
   async chat(request: ChatAgentRequest): Promise<AgentResponse> {
     if (request.prompt.length > CHAT_PROMPT_MAX) throw new Error("Conversation is too long. Start a new chat; no message was truncated.");
-    if (this.busy) throw new Error("Another Copilot request is running. Wait for it to finish.");
     if (!request.model) throw new Error("Choose a Copilot model first.");
     request.signal.throwIfAborted();
-    this.busy = true;
+    this.busy++;
     const fs = new MemorySessionFs();
     let session: CopilotSession | undefined;
     let unsubscribe: (() => void) | undefined;
@@ -188,7 +189,7 @@ export class CopilotAdapter implements AiProvider {
       };
       if (workspace) await mkdir(workspace.directory, { recursive: true });
       session = await this.client.createSession(chatSessionConfig(request.model, this.workingDirectory, fs, request.tools, workspace));
-      this.active = session;
+      this.sessions.add(session);
       await session.rpc.options.update({ installedPlugins: [] });
       request.signal.throwIfAborted();
       let timeoutError: ChatTimeoutError | undefined;
@@ -262,14 +263,14 @@ export class CopilotAdapter implements AiProvider {
           finally { await session.disconnect(); }
         }
       } finally {
-        if (this.active === session) this.active = undefined;
+        if (session) this.sessions.delete(session);
         fs.clear();
-        this.busy = false;
+        this.busy--;
       }
     }
   }
   async stop(): Promise<void> {
-    if (this.active) await this.active.abort();
+    await Promise.all([...this.sessions].map(session => session.abort()));
     if (this.client) {
       const errors = await this.client.stop();
       this.client = undefined;

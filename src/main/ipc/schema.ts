@@ -70,7 +70,7 @@ export const commandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("chat.new") }).strict(),
   z.object({ type: z.literal("chat.send"), conversationId: id.optional(), text: z.string().min(1).max(CHAT_MESSAGE_MAX).refine(value => !!value.trim(), "Write a message."), model: z.string().min(1).max(200).optional(), mailRefresh: z.enum(["download", "local"]).optional() }).strict(),
   z.object({ type: z.literal("chat.confirm"), conversationId: id, turnId: id, actionId: id }).strict(),
-  z.object({ type: z.literal("chat.cancel") }).strict(),
+  z.object({ type: z.literal("chat.cancel"), conversationId: id.optional() }).strict(),
   z.object({ type: z.literal("chat.delete"), conversationId: id }).strict(),
   z.object({ type: z.literal("chat.permission"), conversationId: id, turnId: id, requestId: id, decision: z.enum(["once", "chat", "deny"]) }).strict(),
   z.object({ type: z.literal("chat.openFile"), conversationId: id, turnId: id, path: z.string().min(1).max(1000), reveal: z.boolean().optional() }).strict(),

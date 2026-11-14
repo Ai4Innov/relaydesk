@@ -198,7 +198,7 @@ describe("default automatic full Gmail archive and local RAG", () => {
   it("resumes after pause and runs independently of the global AI busy flag and budget", async () => {
     const f = fixture(); addThread(f.vault);
     settings(f.vault, { syncPaused: true, dailyAiLimit: 1, aiRunsToday: 1 });
-    Object.assign(f.service, { aiBusy: true });
+    Object.assign(f.service, { aiRunning: 1 });
     await f.service.initialize(); await tick();
     expect(bridge.readMailThread).not.toHaveBeenCalled();
     await f.service.command({ type: "settings.update", patch: { syncPaused: false } });

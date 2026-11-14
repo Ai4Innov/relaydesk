@@ -118,6 +118,7 @@ interface StoredConversation extends Omit<ChatConversation, "turns" | "compacted
 const COMPACT_SUMMARY_MAX = 12_000;
 const COMPACT_CHUNK_MAX = 70_000;
 interface StoredState { conversations: StoredConversation[]; activeConversationId?: string }
+interface ActiveRun { conversationId: string; turn: StoredTurn; controller: AbortController; promise?: Promise<void>; permissions: string }
 interface Hooks {
   changed(): void;
   settings(): Settings;
@@ -154,7 +155,9 @@ async function scanWorkspace(directory: string): Promise<Map<string, { mtime: nu
 
 export class ChatService {
   private state: StoredState;
-  private active?: { conversationId: string; turn: StoredTurn; controller: AbortController; promise?: Promise<void>; permissions: string };
+  /** Running requests, one per conversation; different conversations run in parallel. */
+  private runs = new Map<string, ActiveRun>();
+  private runFor(turn: StoredTurn): ActiveRun | undefined { for (const run of this.runs.values()) if (run.turn === turn) return run; }
   private confirming = false;
   private confirmation?: Promise<CommandResult>;
   private stopped = false;
@@ -295,16 +298,18 @@ export class ChatService {
       ["indexed", "partial"].includes(attachment.status);
   }
   private guard(turn: StoredTurn): void {
-    this.active?.controller.signal.throwIfAborted();
+    const run = this.runFor(turn);
+    run?.controller.signal.throwIfAborted();
     if (this.stopped) throw new Error("Chat is stopped.");
-    if (this.active && this.permissions() !== this.active.permissions) throw new Error("Source permissions changed during this chat. Start a new request.");
+    if (run && this.permissions() !== run.permissions) throw new Error("Source permissions changed during this chat. Start a new request.");
     // Content updates (new mail, attachment processing, background review replacing suggested
     // tasks) do not invalidate a read-only answer; only consent/permission loss does. Every
     // write re-checks exact revisions and existence in its own action guards.
     if (!turn.evidence.every(ref => this.disclosable(ref))) throw new Error("Evidence is no longer permitted.");
   }
   permissionsChanged(): void {
-    if (this.active && this.permissions() !== this.active.permissions) this.active.controller.abort();
+    const permissions = this.permissions();
+    for (const run of this.runs.values()) if (permissions !== run.permissions) run.controller.abort();
     this.redact();
   }
   forgetAccount(accountId: string): void {
@@ -320,16 +325,11 @@ export class ChatService {
       (conversation.title === "Conversation unavailable" && conversation.turns.length === 1 &&
         conversation.turns[0].status === "cancelled" && !conversation.turns[0].evidence.length)).map(conversation => conversation.id));
     if (!removed.size) return;
-    if (this.active && removed.has(this.active.conversationId)) this.active.controller.abort();
+    for (const run of this.runs.values()) if (removed.has(run.conversationId)) run.controller.abort();
     this.state.conversations = this.state.conversations.filter(conversation => !removed.has(conversation.id));
     if (this.state.activeConversationId && removed.has(this.state.activeConversationId))
       this.state.activeConversationId = this.state.conversations[0]?.id;
     this.persist();
-  }
-  private limit(message: string): never {
-    const error = new ChatLimitError(message);
-    this.active?.controller.abort(error);
-    throw error;
   }
   private trackScope(turn: StoredTurn, accountId?: string, sourceId?: string): void {
     if (!accountId) return;
@@ -367,7 +367,7 @@ export class ChatService {
     let changed = false;
     for (const conversation of this.state.conversations) {
       if (!conversation.turns.some(turn => turn.evidence.some(ref => !this.disclosable(ref)))) continue;
-      if (this.active?.conversationId === conversation.id) this.active.controller.abort();
+      this.runs.get(conversation.id)?.controller.abort();
       conversation.title = "Conversation unavailable";
       conversation.compaction = undefined;
       conversation.turns = [{
@@ -382,7 +382,8 @@ export class ChatService {
   snapshot(): ChatState {
     this.permissionsChanged();
     return {
-      activeConversationId: this.state.activeConversationId, busy: !!this.active || this.confirming,
+      activeConversationId: this.state.activeConversationId, busy: this.runs.size > 0 || this.confirming,
+      running: [...this.runs.keys()],
       conversations: this.state.conversations.map(({ compaction, ...conversation }) => ({
         ...conversation, ...(compaction ? { compactedTurns: compaction.turns } : {}), turns: conversation.turns.map(({ evidence: _evidence, actions, ...turn }) => ({
           ...turn, actions: actions.map(({ command: _command, guards: _guards, review: _review, ...action }) => action)
@@ -395,25 +396,27 @@ export class ChatService {
     if (this.stopped) throw new Error("Application shutdown is in progress.");
     this.permissionsChanged();
     if (command.type === "chat.cancel") {
-      this.active?.controller.abort();
-      if (this.active) {
-        this.active.turn.status = "cancelled"; this.active.turn.text = "Chat cancelled."; this.active.turn.progress = undefined;
-        this.failPending(this.active.turn, "Chat cancelled; this proposal was not executed.");
-        this.persist();
+      const targets = command.conversationId ? [this.runs.get(command.conversationId)].filter(run => !!run) : [...this.runs.values()];
+      for (const run of targets) {
+        run.controller.abort();
+        run.turn.status = "cancelled"; run.turn.text = "Chat cancelled."; run.turn.progress = undefined;
+        this.failPending(run.turn, "Chat cancelled; this proposal was not executed.");
       }
+      if (targets.length) this.persist();
       return { message: this.confirming ? "An approved action is already executing and cannot be undone by cancelling chat." : "Chat cancellation requested." };
     }
     if (command.type === "chat.permission") return this.decidePermission(command);
     if (command.type === "chat.openFile") return this.openFile(command);
     if (command.type === "chat.delete") {
-      if (this.confirming || this.active?.conversationId === command.conversationId) throw new Error("Wait for this chat to stop before deleting it.");
+      if (this.confirming || this.runs.has(command.conversationId)) throw new Error("Wait for this chat to stop before deleting it.");
       this.state.conversations = this.state.conversations.filter(c => c.id !== command.conversationId);
       if (this.state.activeConversationId === command.conversationId) this.state.activeConversationId = this.state.conversations[0]?.id;
       this.persist(); return { message: "Conversation deleted from the encrypted archive." };
     }
-    if (this.active || this.confirming) throw new Error("Another chat request or confirmation is running.");
     if (command.type === "chat.new") return { conversationId: this.newConversation().id };
     if (command.type === "chat.confirm") {
+      if (this.confirming) throw new Error("Another confirmation is running.");
+      if (this.runs.has(command.conversationId)) throw new Error("This chat is still running. Wait for it to finish before confirming its action.");
       this.confirmation = this.confirm(command).finally(() => { this.confirmation = undefined; });
       return this.confirmation;
     }
@@ -423,6 +426,7 @@ export class ChatService {
     if (!model) throw new Error("Connect your AI provider and select a model in Settings.");
     const conversation = command.conversationId ? this.state.conversations.find(c => c.id === command.conversationId) : this.newConversation();
     if (!conversation) throw new Error("Conversation not found.");
+    if (this.runs.has(conversation.id)) throw new Error("This chat is still working. Wait for it, cancel it, or start another chat to work in parallel.");
     const history = conversation.turns.map(turn => ({
       role: turn.role, text: turn.text, status: turn.status,
       actions: turn.actions.map(action => ({ title: action.title, status: action.status, result: action.result }))
@@ -443,13 +447,13 @@ export class ChatService {
     if (conversation.turns.length === 2) conversation.title = command.text.replace(/\s+/g, " ").slice(0, 72);
     conversation.updatedAt = now(); this.state.activeConversationId = conversation.id;
     const active = { conversationId: conversation.id, turn, controller: new AbortController(), permissions: this.permissions(), promise: undefined as Promise<void> | undefined };
-    this.active = active;
+    this.runs.set(conversation.id, active);
     this.persist();
     const requiresFreshMail = mailRefresh === "download" && /\b(email|emails|mail|messages|inbox|courriels?|mails?)\b/i.test(command.text)
       && /\b(latest|new|current|fresh|refresh|fetch|urgent|today|nouveaux|nouveau|derniers|dernières|actualis|récents)\b/i.test(command.text);
     const prompt = () => this.compactedPrompt(conversation, history, context, model, turn, active.controller.signal);
     active.promise = this.run(turn, prompt, model, active.controller, requiresFreshMail).finally(() => {
-      if (this.active === active) this.active = undefined;
+      if (this.runs.get(active.conversationId) === active) this.runs.delete(active.conversationId);
       this.redact(); this.persist();
     });
     return { conversationId: conversation.id, message: "The assistant is working. You can cancel this chat request." };
@@ -516,7 +520,7 @@ export class ChatService {
   private async run(turn: StoredTurn, preparePrompt: () => Promise<string>, model: string, controller: AbortController, requiresFreshMail = false): Promise<void> {
     const settings = this.hooks.settings();
     const directory = settings.assistantTools ? this.hooks.workspaceDirectory?.() : undefined;
-    const conversationId = this.active?.conversationId ?? "";
+    const conversationId = this.runFor(turn)?.conversationId ?? "";
     let before: Map<string, { mtime: number; size: number }> | undefined;
     try {
       this.guard(turn);
@@ -629,7 +633,7 @@ export class ChatService {
             let result: MailFreshnessResult;
             try {
               result = this.hooks.refreshMail ? await this.hooks.refreshMail({
-                accountId: source.accountId, sourceId: source.id, force, signal: this.active!.controller.signal,
+                accountId: source.accountId, sourceId: source.id, force, signal: this.runFor(turn)!.controller.signal,
                 progress: text => {
                   this.guard(turn);
                   if (turn.progress !== text) activity();
@@ -1072,7 +1076,8 @@ export class ChatService {
     const text = (value: unknown, max = 4000) => typeof value === "string" ? value.slice(0, max) : "";
     const settings = this.hooks.settings();
     const conversation = this.state.conversations.find(item => item.id === conversationId);
-    if (!this.active || this.active.turn !== turn || this.active.controller.signal.aborted || !settings.assistantTools) return "deny";
+    const run = this.runFor(turn);
+    if (!run || run.controller.signal.aborted || !settings.assistantTools) return "deny";
     let kind: ChatPermission["kind"], title: string, detail: string, risk: string | undefined;
     const automatic = (mode: string) => mode === "auto";
     if (settings.bypassSafety) {
@@ -1117,7 +1122,7 @@ export class ChatService {
     this.hooks.attention?.("Relay Desk needs your approval", title);
     const decision = await new Promise<"approve" | "deny">(resolve => {
       const timeout = setTimeout(() => finish("expired"), 5 * 60_000);
-      const signal = this.active!.controller.signal;
+      const signal = run.controller.signal;
       const abort = () => finish("expired");
       const finish = (status: ChatPermission["status"]) => {
         if (!this.pendingPermissions.has(permission.id)) return;
@@ -1376,9 +1381,10 @@ export class ChatService {
       throw new Error(action.result);
     } finally { this.confirming = false; this.redact(); this.persist(); }
   }
-  async settled(): Promise<void> { await this.active?.promise; }
+  async settled(): Promise<void> { await Promise.all([...this.runs.values()].map(run => run.promise)); }
   async stop(): Promise<void> {
-    this.stopped = true; this.active?.controller.abort();
+    this.stopped = true;
+    for (const run of this.runs.values()) run.controller.abort();
     await this.settled();
     await this.confirmation?.catch(() => undefined);
   }

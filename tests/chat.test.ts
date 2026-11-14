@@ -714,6 +714,27 @@ describe("chat agent tools, consent and encrypted checkpoint state", () => {
     await expect(f.chat.command({ type: "chat.send", text: "x".repeat(CHAT_MESSAGE_MAX + 1) })).rejects.toThrow();
     expect(f.hooks.generate).toHaveBeenCalledOnce();
   });
+  it("runs separate conversations in parallel and cancels only the chosen one", async () => {
+    const f = fixture();
+    const finish: Array<() => void> = [];
+    f.hooks.generate.mockImplementation(request => new Promise((resolve, reject) => {
+      finish.push(() => resolve({ answer: "Done " + finish.length, citationIds: [] }));
+      request.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+    }));
+    const one = (await f.chat.command({ type: "chat.send", text: "First" })).conversationId!;
+    const two = (await f.chat.command({ type: "chat.send", text: "Second" })).conversationId!;
+    expect(two).not.toBe(one);
+    await vi.waitFor(() => expect(f.hooks.generate).toHaveBeenCalledTimes(2));
+    expect(f.chat.snapshot().running).toEqual(expect.arrayContaining([one, two]));
+    await expect(f.chat.command({ type: "chat.send", text: "Again", conversationId: one })).rejects.toThrow("still working");
+    await f.chat.command({ type: "chat.cancel", conversationId: one });
+    await vi.waitFor(() => expect(f.chat.snapshot().running).toEqual([two]));
+    finish[1](); await f.chat.settled();
+    const turns = (id: string) => f.chat.snapshot().conversations.find(c => c.id === id)!.turns;
+    expect(turns(one).at(-1)!.status).toBe("cancelled");
+    expect(turns(two).at(-1)).toMatchObject({ status: "complete" });
+    expect(f.chat.snapshot().busy).toBe(false);
+  });
   it("drops hallucinated citations and allows many tool calls", async () => {
     const f = fixture();
     f.hooks.generate.mockResolvedValueOnce({ answer: "Claim", citationIds: ["never-read"] });

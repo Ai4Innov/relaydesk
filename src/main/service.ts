@@ -101,7 +101,9 @@ export class RelayService {
   private activeJobs = new Set<string>();
   private timer?: ReturnType<typeof setInterval>;
   private lastScheduledRefresh = Date.now();
-  private aiBusy = false;
+  /** AI requests in flight. Chat conversations run in parallel; background/draft work waits for an idle AI. */
+  private aiRunning = 0;
+  private get aiBusy(): boolean { return this.aiRunning > 0; }
   private attachmentBusy = false;
   private attachmentController?: { accountId: string; linkedAccountId?: string; controller: AbortController };
   private stopped = false;
@@ -202,7 +204,7 @@ export class RelayService {
       search: (query, accountId) => this.retrieval.search(query, accountId),
       refreshMail: request => this.refreshMail(request),
       prepareAttachment: id => this.prepareAttachment(id),
-      generate: request => { this.interactiveAt = Date.now(); return this.runAi(() => this.ai.chat(request), request.signal ?? true); },
+      generate: request => { this.interactiveAt = Date.now(); return this.runAi(() => this.ai.chat(request), request.signal ?? true, true); },
       workspaceDirectory: () => this.assistantWorkspace(),
       renderPdf: this.host.renderPdf ? html => this.host.renderPdf!(html) : undefined,
       knowledge: this.knowledge,
@@ -916,17 +918,17 @@ export class RelayService {
     this.host.changed();
     return { eventId: id, message: `${existing ? "Updated" : "Added"} in your Relay Desk calendar (${account.email}). Google Calendar itself is unchanged; use "Add to Google Calendar" on the event to copy it there.` };
   }
-  private async runAi<T>(task: () => Promise<T>, wait: boolean | AbortSignal = false): Promise<T> {
+  private async runAi<T>(task: () => Promise<T>, wait: boolean | AbortSignal = false, parallel = false): Promise<T> {
     const signal = typeof wait === "object" ? wait : undefined;
-    for (const until = Date.now() + 180_000; wait && this.aiBusy && Date.now() < until && !signal?.aborted;) await new Promise(resolve => setTimeout(resolve, 250));
+    for (const until = Date.now() + 180_000; !parallel && wait && this.aiBusy && Date.now() < until && !signal?.aborted;) await new Promise(resolve => setTimeout(resolve, 250));
     signal?.throwIfAborted();
-    if (this.aiBusy) throw new Error("Another AI request is running. Please wait.");
+    if (!parallel && this.aiBusy) throw new Error("Another AI request is running. Please wait.");
     const settings = this.settings();
     if (settings.aiRunsToday >= settings.dailyAiLimit) throw new Error("Your local daily AI-run budget is exhausted. Sync, search and editing still work.");
-    this.aiBusy = true;
+    this.aiRunning++;
     this.vault.put("settings", "preferences", { ...settings, aiRunsToday: settings.aiRunsToday + 1 });
     this.host.changed();
-    try { return await task(); } finally { this.aiBusy = false; this.host.changed(); }
+    try { return await task(); } finally { this.aiRunning--; this.host.changed(); }
   }
   /** Switches the AI provider, remembering each provider's last model. Running requests finish on their provider. */
   private async selectAiProvider(provider: AiProviderId): Promise<CommandResult> {
